@@ -1,0 +1,44 @@
+{
+    "manifest_version": 3,
+    "name": "LRCLIB Lyrics for YouTube",
+    "version": "2.4",
+    "description": "Lirik karaoke YouTube dengan data dari LRCLIB.",
+    "icons": {
+      "16": "icons/icon.png",
+      "32": "icons/icon.png",
+      "48": "icons/icon.png",
+      "128": "icons/icon.png"
+    },
+    "permissions": [
+      "activeTab",
+      "scripting",
+      "storage",
+      "tabs"
+    ],
+    "host_permissions": [
+      "https://www.youtube.com/*",
+      "https://*.kazelyrics.com/*",
+      "https://generativelanguage.googleapis.com/*",
+      "http://localhost:20128/*",
+      "http://127.0.0.1:20128/*",
+      "https://lrclib.net/*"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "action": {
+      "default_title": "Tampilkan/Sembunyikan Lirik",
+      "default_icon": {
+        "16": "icons/icon.png",
+        "32": "icons/icon.png",
+        "48": "icons/icon.png",
+        "128": "icons/icon.png"
+      }
+    },
+    "content_scripts": [
+        {
+          "matches": ["<all_urls>"],
+          "js": ["content.js"]
+        }
+      ]
+  }
