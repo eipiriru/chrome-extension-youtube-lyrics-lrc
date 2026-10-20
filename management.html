@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>Manajemen Lirik</title>
+  <title>Manajemen Data</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -20,6 +20,11 @@
     }
     h1 { font-size: 16px; color: #fff; }
     #count { color: #888; font-size: 12px; }
+    .tabs { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid #333; }
+    .tab { border:0; border-radius:4px 4px 0 0; color:#999; background:transparent; padding:9px 12px; font-size:13px; }
+    .tab[aria-selected="true"] { color:#81c995; background:#222; box-shadow: inset 0 -2px #81c995; }
+    [role="tabpanel"][hidden] { display:none; }
+    .config-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; align-items:start; }
     .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
     .toolbar input {
       flex: 1;
@@ -88,6 +93,17 @@
     .range-wrap input[type="range"] { flex: 1; cursor: pointer; }
     .range-val { font-size: 12px; color: #81c995; min-width: 42px; text-align: right; }
     .field input:focus { outline: none; border-color: #81c995; }
+    .field select {
+      width: 100%; background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
+      color: #fff; padding: 7px 9px; font-size: 12px;
+    }
+    .field select:focus { outline: none; border-color: #81c995; }
+    .field label.check {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #ddd; cursor: pointer;
+    }
+    .field label.check input { width: auto; margin: 0; }
+    .hint { font-size: 11px; color: #999; line-height: 1.5; margin-bottom: 10px; }
     .cfg-actions { display: flex; gap: 8px; margin-top: 4px; }
     .guide { font-size: 12px; color: #bbb; line-height: 1.6; }
     .guide h3 { font-size: 12px; color: #81c995; margin: 10px 0 4px; }
@@ -95,17 +111,33 @@
     .guide code { background: #2a2a2a; padding: 1px 5px; border-radius: 3px; color: #fbbc04; }
     .guide a { color: #81c995; text-decoration: underline; }
     .guide a:hover { color: #a8dab5; }
+    .release { background:#222; border:1px solid #333; border-radius:6px; padding:14px; margin-bottom:12px; }
+    .release h2 { color:#81c995; font-size:15px; margin-bottom:4px; }
+    .release time { color:#888; font-size:11px; }
+    .release ul { padding-left:18px; margin-top:10px; color:#bbb; line-height:1.6; }
+    @media (max-width: 640px) { .config-grid { grid-template-columns:1fr; gap:0; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>🎵 Daftar Lirik Tersimpan</h1>
+    <h1>🎵 Manajemen Data</h1>
     <span id="count"></span>
   </header>
-  <div class="toolbar">
-    <input id="search" type="text" placeholder="Cari judul lagu...">
-    <button id="clear-all" class="btn-danger">Hapus Semua</button>
-  </div>
+  <nav class="tabs" role="tablist" aria-label="Bagian manajemen">
+    <button class="tab" id="tab-lyrics" role="tab" aria-selected="true" aria-controls="panel-lyrics">Lirik tersimpan</button>
+    <button class="tab" id="tab-config" role="tab" aria-selected="false" aria-controls="panel-config" tabindex="-1">Konfigurasi</button>
+    <button class="tab" id="tab-guide" role="tab" aria-selected="false" aria-controls="panel-guide" tabindex="-1">Informasi</button>
+    <button class="tab" id="tab-changelog" role="tab" aria-selected="false" aria-controls="panel-changelog" tabindex="-1">Changelog</button>
+  </nav>
+  <section id="panel-lyrics" role="tabpanel" aria-labelledby="tab-lyrics">
+    <div class="toolbar">
+      <input id="search" type="text" placeholder="Cari judul lagu..." aria-label="Cari judul lagu">
+      <button id="clear-all" class="btn-danger">Hapus Semua</button>
+    </div>
+    <div id="list"></div>
+  </section>
+  <section id="panel-config" role="tabpanel" aria-labelledby="tab-config" hidden>
+  <div class="config-grid">
   <div class="section">
     <h2 data-target="ui-body">🎨 Konfigurasi Tampilan Widget <span class="chevron">▼</span></h2>
     <div class="section-body" id="ui-body">
@@ -179,11 +211,38 @@
     </div>
   </div>
   <div class="section">
+    <h2 data-target="translate-body">🌐 Terjemahan Lirik <span class="chevron">▼</span></h2>
+    <div class="section-body" id="translate-body">
+      <div class="field">
+        <label for="cfg-translate-lang">Bahasa Terjemahan</label>
+        <select id="cfg-translate-lang">
+          <option value="en">English</option>
+          <option value="id">Indonesia</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="check" for="cfg-translate-show">
+          <input id="cfg-translate-show" type="checkbox" checked>
+          Tampilkan terjemahan per baris di widget
+        </label>
+      </div>
+      <p class="hint">Toggle hanya menampilkan/menyembunyikan terjemahan. AI tetap menerjemahkan ke bahasa pilihan di atas dan hasilnya disimpan bersama liriknya — berapa pun status toggle-nya.</p>
+      <div class="cfg-actions">
+        <button id="cfg-translate-save" class="btn-primary">Simpan Terjemahan</button>
+        <button id="cfg-translate-reset">Reset Terjemahan</button>
+      </div>
+    </div>
+  </div>
+  </div>
+  </section>
+  <section id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
+  <div class="section">
     <h2 data-target="usage-body">📖 Cara Penggunaan <span class="chevron">▼</span></h2>
     <div class="section-body guide" id="usage-body">
       <ol>
         <li>Buka tab YouTube, putar video musik apa pun, lalu klik ikon ekstensi di toolbar untuk menampilkan widget lirik.</li>
         <li>Ekstensi otomatis mencari lirik bertimestamp di <a href="https://lrclib.net/" target="_blank" rel="noreferrer"><strong>LRCLIB</strong></a>. Jika API key AI diisi dan lagu berbahasa asing, teks ditransliterasi ke romaji oleh <strong>Gemini</strong> (fallback ke <strong>9Router</strong>).</li>
+        <li>Terjemahan per baris: pilih <strong>English</strong> / <strong>Indonesia</strong> di bagian <strong>🌐 Terjemahan Lirik</strong>. AI selalu menerjemahkan ke bahasa tersebut dan menyimpan hasilnya ke penyimpanan lokal; toggle ON/OFF hanya menampilkan atau menyembunyikan terjemahan di widget. Tombol <strong>Terj: ON/OFF</strong> di header widget mempercepat toggle yang sama.</li>
         <li>Jika LRCLIB tidak punya lagunya, ekstensi fallback ke scraping <strong>Kazelyrics</strong>. Bila Gemini atau 9Router dikonfigurasi, lirik dirapikan AI (Gemini → 9Router); tanpa API key, lirik mentah ditampilkan.</li>
         <li>Saat video diputar, baris lirik tersorot otomatis mengikuti waktu (karaoke) dan bisa di-scroll manual tanpa mengganggu sinkronisasi.</li>
         <li>Tombol <strong>−0.1s / +0.1s</strong> menyesuaikan offset waktu; <strong>Reset</strong> mengembalikan ke 0. Offset tersimpan permanen.</li>
@@ -192,14 +251,32 @@
         <li>Lirik hasil proses disimpan otomatis ke penyimpanan lokal dan dimuat ulang tanpa internet di putaran berikutnya.</li>
         <li>Klik tombol <strong>⚙️</strong> di header widget untuk membuka halaman ini: kelola lirik tersimpan, konfigurasi API Gemini/9Router, dan hapus data.</li>
         <li>Kustomisasi UI: atur warna background, tingkat transparan, warna lirik aktif/pasif, warna romaji, dan ukuran font lewat bagian <strong>Konfigurasi Tampilan Widget</strong>.</li>
-        <li>Konfigurasi API di atas disimpan di penyimpanan lokal browser dan dipakai untuk semua pemrosesan AI (romaji, formatting, dan fallback). Kedua API key bersifat opsional.</li>
+        <li>Konfigurasi API di atas disimpan di penyimpanan lokal browser dan dipakai untuk semua pemrosesan AI (romaji, terjemahan, formatting, dan fallback). Kedua API key bersifat opsional.</li>
         <li>Panduan API: dapatkan Gemini API key gratis di <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Google AI Studio</a>. Untuk 9Router lokal (port default 20128), isi URL ke <code>http://localhost:20128/v1/chat/completions</code> atau <code>http://127.0.0.1:20128/v1/chat/completions</code>.</li>
         <li>Untuk development, ubah <code>DEBUG</code> di <code>background.js</code> menjadi <code>true</code> agar log muncul di console. Sebelum push, ubah kembali ke <code>false</code>.</li>
         <li>Proyek independen. Lirik sinkron didukung oleh <a href="https://lrclib.net/" target="_blank" rel="noreferrer">LRCLIB — Free & Open Lyrics Library</a> (<a href="https://github.com/tranxuanthang/lrclib" target="_blank" rel="noreferrer">GitHub</a>).</li>
       </ol>
     </div>
   </div>
-  <div id="list"></div>
+  </section>
+  <section id="panel-changelog" role="tabpanel" aria-labelledby="tab-changelog" hidden>
+    <article class="release">
+      <h2>Versi 2.5</h2>
+      <time datetime="2026-10-20">20 Oktober 2026</time>
+      <ul>
+        <li>Tambah terjemahan lirik per baris dan pilihan bahasa.</li>
+        <li>Perbarui UI/UX widget dan halaman manajemen, termasuk navigasi tab.</li>
+      </ul>
+    </article>
+    <article class="release">
+      <h2>Versi 2.4 — Rilis awal</h2>
+      <time datetime="2026-10-19">19 Oktober 2026</time>
+      <ul>
+        <li>Rilis pertama ekstensi LRCLIB Lyrics for YouTube.</li>
+        <li>Fitur dasar: widget lirik karaoke, pencarian LRCLIB, penyimpanan lirik lokal, dan pengelolaan offset sinkronisasi.</li>
+      </ul>
+    </article>
+  </section>
   <div id="status"></div>
   <script src="management.js"></script>
 </body>

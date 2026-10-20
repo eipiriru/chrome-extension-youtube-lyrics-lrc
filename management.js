@@ -21,6 +21,11 @@ const uiFontSizeEl = document.getElementById('cfg-ui-font-size');
 const uiFontSizeValEl = document.getElementById('cfg-ui-font-size-val');
 const saveUiConfigBtn = document.getElementById('cfg-ui-save');
 const resetUiConfigBtn = document.getElementById('cfg-ui-reset');
+const translateLangEl = document.getElementById('cfg-translate-lang');
+const translateShowEl = document.getElementById('cfg-translate-show');
+const saveTranslateConfigBtn = document.getElementById('cfg-translate-save');
+const resetTranslateConfigBtn = document.getElementById('cfg-translate-reset');
+const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
 
 const DEFAULT_UI_CONFIG = {
   backgroundColor: '#181818',
@@ -30,6 +35,11 @@ const DEFAULT_UI_CONFIG = {
   romajiColor: '#8ab4f8',
   translationColor: '#81c995',
   activeFontSize: 20
+};
+
+const DEFAULT_TRANSLATE_CONFIG = {
+  language: 'id',
+  show: true
 };
 
 let savedItems = [];
@@ -106,12 +116,13 @@ function loadItems() {
 }
 
 function loadConfig() {
-  chrome.storage.local.get(['aiConfig', 'uiConfig'], ({ aiConfig = {}, uiConfig = {} }) => {
+  chrome.storage.local.get(['aiConfig', 'uiConfig', 'translateConfig'], ({ aiConfig = {}, uiConfig = {}, translateConfig = {} }) => {
     geminiKeyEl.value = aiConfig.geminiApiKey || '';
     nineRouterUrlEl.value = aiConfig.nineRouterUrl || '';
     nineRouterKeyEl.value = aiConfig.nineRouterApiKey || '';
     nineRouterModelEl.value = aiConfig.nineRouterModel || '';
     loadUiConfig(uiConfig);
+    loadTranslateConfig(translateConfig);
   });
 }
 
@@ -126,6 +137,12 @@ function loadUiConfig(config = {}) {
   uiTranslationColorEl.value = ui.translationColor;
   uiFontSizeEl.value = ui.activeFontSize;
   uiFontSizeValEl.textContent = `${ui.activeFontSize}px`;
+}
+
+function loadTranslateConfig(config = {}) {
+  const translate = { ...DEFAULT_TRANSLATE_CONFIG, ...config };
+  translateLangEl.value = translate.language === 'en' ? 'en' : 'id';
+  translateShowEl.checked = translate.show !== false;
 }
 
 function getUiConfigFromForm() {
@@ -207,6 +224,46 @@ resetUiConfigBtn.onclick = () => {
   });
 };
 
+saveTranslateConfigBtn.onclick = () => {
+  const config = {
+    language: translateLangEl.value === 'en' ? 'en' : 'id',
+    show: translateShowEl.checked
+  };
+  chrome.storage.local.set({ translateConfig: config }, () => {
+    showStatus('Konfigurasi terjemahan disimpan.');
+  });
+};
+
+resetTranslateConfigBtn.onclick = () => {
+  chrome.storage.local.remove('translateConfig', () => {
+    loadTranslateConfig();
+    showStatus('Konfigurasi terjemahan dikembalikan ke default.');
+  });
+};
+
+function selectTab(tab) {
+  tabs.forEach((item) => {
+    const selected = item === tab;
+    item.setAttribute('aria-selected', String(selected));
+    item.tabIndex = selected ? 0 : -1;
+    document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
+  });
+}
+
+tabs.forEach((tab) => {
+  tab.onclick = () => selectTab(tab);
+  tab.onkeydown = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = tabs.indexOf(tab);
+    const index = event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+        : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[index].focus();
+    selectTab(tabs[index]);
+  };
+});
+
 document.querySelectorAll('.section h2[data-target]').forEach((heading) => {
   heading.onclick = () => heading.closest('.section').classList.toggle('collapsed');
 });
@@ -215,7 +272,7 @@ document.querySelectorAll('.section h2[data-target]').forEach((heading) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   loadItems();
-  if (changes.aiConfig || changes.uiConfig) loadConfig();
+  if (changes.aiConfig || changes.uiConfig || changes.translateConfig) loadConfig();
 });
 
 loadConfig();

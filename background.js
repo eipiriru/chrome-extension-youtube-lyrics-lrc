@@ -19,6 +19,28 @@ function getAIConfig() {
   });
 }
 
+// Nilai default terjemahan; disimpan di chrome.storage.local "translateConfig".
+// `show` HANYA memengaruhi tampilan di widget. Proses AI (bahasa pilihan + simpan ke
+// storage) tetap berjalan apa pun status toggle-nya.
+const DEFAULT_TRANSLATE_CONFIG = {
+  language: "id", // "en" | "id"
+  show: true
+};
+
+const TRANSLATE_LANGUAGES = { en: "English", id: "Bahasa Indonesia" };
+
+function getTranslateConfig() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get("translateConfig", ({ translateConfig }) => {
+      resolve({ ...DEFAULT_TRANSLATE_CONFIG, ...(translateConfig || {}) });
+    });
+  });
+}
+
+function translateLangName(language) {
+  return TRANSLATE_LANGUAGES[language] || TRANSLATE_LANGUAGES.id;
+}
+
 chrome.action.onClicked.addListener(async (currentTab) => {
   if (currentTab.url.startsWith("chrome://") || currentTab.url.startsWith("chrome-extension://")) return;
 
@@ -93,14 +115,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "fetchLyrics") {
     const tabId = sender.tab.id; // Ambil ID tab yang meminta
     handleLyricsSearch(request.info, tabId).then(sendResponse);
-    return true; 
+    return true;
+  }
+  if (request.action === "translateLyrics") {
+    // Permintaan translasi ulang dari content.js (mis. saat bahasa pilihan berubah)
+    translateLyricsRequest(request, sender.tab?.id).then(sendResponse);
+    return true;
   }
   if (request.action === "openManagementWindow") {
     chrome.windows.create({
       url: chrome.runtime.getURL("management.html"),
       type: "popup",
-      width: 560,
-      height: 640
+      width: 520,
+      height: 600
     });
     sendResponse({ success: true });
   }
@@ -120,12 +147,8 @@ async function searchLRCLIB(info, tabId) {
 
     let lyrics = match.syncedLyrics;
     debugLog("[LRCLIB] Synced lyrics ditemukan", { lines: lyrics.split(/\r?\n/).length });
-    if ([...lyrics].some((char) => /[^\x00-\x7F\s\d\p{P}]/u.test(char))) {
-      updateStatus(tabId, "Lirik non-Latin ditemukan. Mengubah ke romaji...");
-      lyrics = await transliterateSyncedLyrics(lyrics, info, tabId);
-      debugLog("result transliterateSyncedLyrics");
-    }
-    return { success: true, type: "synced", lyrics };
+    const prepared = await prepareSyncedLyrics(lyrics, info, tabId);
+    return { success: true, type: "synced", ...prepared };
   } catch (error) {
     debugError("[LRCLIB] Error:", error);
     updateStatus(tabId, `Error LRCLIB: ${error.message}`);
@@ -145,12 +168,8 @@ async function getLRCLIBByUrl(url, info, tabId) {
     const record = await response.json();
     if (!record.syncedLyrics) return { success: false, error: "Rekaman LRCLIB ini tidak memiliki lirik bertimestamp." };
 
-    let lyrics = record.syncedLyrics;
-    if ([...lyrics].some((char) => /[^\x00-\x7F\s\d\p{P}]/u.test(char))) {
-      updateStatus(tabId, "Lirik non-Latin ditemukan. Mengubah ke romaji...");
-      lyrics = await transliterateSyncedLyrics(lyrics, info, tabId);
-    }
-    return { success: true, type: "synced", lyrics, lrclibId: record.id };
+    const prepared = await prepareSyncedLyrics(record.syncedLyrics, info, tabId);
+    return { success: true, type: "synced", ...prepared, lrclibId: record.id };
   } catch (error) {
     debugError("[LRCLIB] URL error:", error);
     return { success: false, error: error.message };
@@ -190,10 +209,74 @@ async function transliterateSyncedLyrics(lrc, info, tabId) {
   return lrc;
 }
 
+// Transliterasi (jika perlu) lalu terjemahkan per baris sesuai bahasa pilihan.
+// Toggle tampilan TIDAK memengaruhi alur ini: hasil terjemahan selalu diproses
+// dan ikut disimpan ke storage bersama liriknya.
+async function prepareSyncedLyrics(lyrics, info, tabId) {
+  let prepared = lyrics;
+  if ([...prepared].some((char) => /[^\x00-\x7F\s\d\p{P}]/u.test(char))) {
+    updateStatus(tabId, "Lirik non-Latin ditemukan. Mengubah ke romaji...");
+    prepared = await transliterateSyncedLyrics(prepared, info, tabId);
+    debugLog("result transliterateSyncedLyrics");
+  }
+
+  const { language } = await getTranslateConfig();
+  const translations = await translateSyncedLyrics(prepared, info, tabId, language);
+  return { lyrics: prepared, translations, translateLang: language };
+}
+
+// Terjemahkan lirik sinkron per baris ke bahasa pilihan.
+// Mengembalikan array teks SEJAJAR dengan urutan baris bertimestamp di `lrc`,
+// atau null bila AI gagal / belum dikonfigurasi.
+async function translateSyncedLyrics(lrc, info, tabId, language) {
+  const lines = lrc.split(/\r?\n/).filter((line) => /^\[\d{2}:\d{2}\.\d{2,3}\]/.test(line));
+  if (!lines.length) return null;
+
+  const target = translateLangName(language);
+  const prompt = `Terjemahkan teks lirik berikut ke bahasa ${target}. Pertahankan setiap id dan jumlah urutan. Jangan transliterasi dan jangan tambahkan catatan. Balas JSON valid saja dengan format [{"id":0,"text":"terjemahan"}]. Jangan pakai markdown atau timestamp. Lagu: ${info?.fullName || "-"}\n${JSON.stringify(lines.map((line, index) => ({ id: index, text: line.replace(/^.*?\]/, "").trim() })))}`;
+
+  const config = await getAIConfig();
+  const providers = [
+    ...(config.geminiApiKey ? ["Gemini"] : []),
+    ...(config.nineRouterApiKey ? ["9Router"] : [])
+  ];
+  if (!providers.length) return null;
+
+  for (const provider of providers) {
+    try {
+      updateStatus(tabId, `Menerjemahkan lirik ke ${target} via ${provider}...`);
+      const text = provider === "9Router"
+        ? await request9Router(prompt, config)
+        : await requestGemini(prompt, config);
+      if (!text) continue;
+      const translated = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim());
+      debugLog(translated);
+      if (!Array.isArray(translated) || translated.length !== lines.length) continue;
+
+      const textById = new Map(translated.map((item) => [item?.id, item?.text]));
+      if (lines.some((_, index) => typeof textById.get(index) !== "string")) continue;
+
+      return lines.map((_, index) => String(textById.get(index)).trim());
+    } catch (error) {
+      debugError(`[${provider}] Translation error:`, error);
+    }
+  }
+  return null;
+}
+
+// Dipanggil content.js bila bahasa pilihan berubah agar lirik lama diproses ulang.
+async function translateLyricsRequest(request, tabId) {
+  const { language } = await getTranslateConfig();
+  const translations = await translateSyncedLyrics(request.lyrics || "", request.info, tabId, language);
+  return { translations, translateLang: language };
+}
+
 async function request9Router(prompt, cfg) {
   const config = cfg || await getAIConfig();
   if (!config.nineRouterApiKey || !config.nineRouterUrl || !config.nineRouterModel) return "";
   const response = await fetch(config.nineRouterUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(config.nineRouterApiKey ? { Authorization: `Bearer ${config.nineRouterApiKey}` } : {}) }, body: JSON.stringify({ model: config.nineRouterModel, messages: [{ role: "user", content: prompt }], stream: false }) });
+  debugLog("request9Router");
+  debugLog(response);
   if (!response.ok) throw new Error(`9Router HTTP ${response.status}`);
   return (await response.json()).choices?.[0]?.message?.content || "";
 }
@@ -296,11 +379,13 @@ async function searchKazelyrics(songTitle) {
 
 async function processWithGemini(info, rawLyrics, tabId) {
   try {
+    const { language } = await getTranslateConfig();
+    const targetLang = translateLangName(language);
     let promptText = "";
     if (rawLyrics) {
-      promptText = `Teks lirik mentah dari lagu "${info.songTitle}":\n"""\n${rawLyrics}\n"""\nTugasmu HANYA merapikan format teks di atas menggunakan tag HTML: <span class="lyric-ori">, <span class="lyric-romaji">, <span class="lyric-id">. Jangan menambah lirik di luar teks tersebut. Jangan berikan teks pembuka/penutup.`;
+      promptText = `Teks lirik mentah dari lagu "${info.songTitle}":\n"""\n${rawLyrics}\n"""\nTugasmu HANYA merapikan format teks di atas menggunakan tag HTML: <span class="lyric-ori">, <span class="lyric-romaji">, <span class="lyric-id">. Isi <span class="lyric-id"> adalah terjemahan ke bahasa ${targetLang}. Jangan menambah lirik di luar teks tersebut. Jangan berikan teks pembuka/penutup.`;
     } else {
-      promptText = `Berikan lirik lagu untuk lagu berjudul "${info.songTitle}" oleh artis "${info.artist}". Jika tidak tahu, WAJIB jawab "LIRIK_TIDAK_DITEMUKAN". Jika tahu, format WAJIB menggunakan tag HTML: <span class="lyric-ori">, <span class="lyric-romaji">, <span class="lyric-id">. Jangan berikan teks pembuka.`;
+      promptText = `Berikan lirik lagu untuk lagu berjudul "${info.songTitle}" oleh artis "${info.artist}". Jika tidak tahu, WAJIB jawab "LIRIK_TIDAK_DITEMUKAN". Jika tahu, format WAJIB menggunakan tag HTML: <span class="lyric-ori">, <span class="lyric-romaji">, <span class="lyric-id">. Isi <span class="lyric-id"> adalah terjemahan ke bahasa ${targetLang}. Jangan berikan teks pembuka.`;
     }
 
     const config = await getAIConfig();
@@ -317,9 +402,11 @@ async function processWithGemini(info, rawLyrics, tabId) {
 }
 
 async function processWith9Router(info, rawLyrics, tabId) {
+  const { language } = await getTranslateConfig();
+  const targetLang = translateLangName(language);
   const promptText = rawLyrics
-    ? `Rapikan HTML lirik berikut tanpa menambah atau menghapus lirik. Gunakan hanya class lyric-ori, lyric-romaji, lyric-id. Output HTML saja.\n${rawLyrics}`
-    : `Cari lirik lagu "${info.songTitle}" oleh "${info.artist}". Jika tidak tahu, jawab LIRIK_TIDAK_DITEMUKAN. Format HTML hanya dengan class lyric-ori, lyric-romaji, lyric-id. Output HTML saja.`;
+    ? `Rapikan HTML lirik berikut tanpa menambah atau menghapus lirik. Gunakan hanya class lyric-ori, lyric-romaji, lyric-id. Isi lyric-id adalah terjemahan ke bahasa ${targetLang}. Output HTML saja.\n${rawLyrics}`
+    : `Cari lirik lagu "${info.songTitle}" oleh "${info.artist}". Jika tidak tahu, jawab LIRIK_TIDAK_DITEMUKAN. Format HTML hanya dengan class lyric-ori, lyric-romaji, lyric-id (lyric-id = terjemahan ke bahasa ${targetLang}). Output HTML saja.`;
 
   try {
     const config = await getAIConfig();

@@ -2,16 +2,16 @@
 
 // 1. Buat elemen Widget UI
 const widgetHTML = `
-  <div id="yt-lyrics-widget" style="display:none; position:fixed; top:80px; right:20px; width:600px; background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: 'Segoe UI', Tahoma, sans-serif; overflow:hidden;">
-    <div id="yt-lyrics-header" style="background:#202020; padding:12px; cursor:grab; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333;">
+  <div id="yt-lyrics-widget" style="display:none; position:fixed; top:80px; right:20px; width:min(720px, calc(100vw - 32px)); background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: 'Segoe UI', Tahoma, sans-serif; overflow:hidden;">
+    <div id="yt-lyrics-header" style="background:#202020; padding:12px; cursor:grab; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #333;">
       <div style="display:flex; align-items:center; gap:8px;">
-        <span style="color:#fff; font-weight:bold; font-size:14px;">🎵 Song Lyrics</span>
+        <span style="color:#fff; font-weight:bold; font-size:14px;">🎵 Lyrics</span>
         <div id="yt-lyrics-offset" style="color:#aaa; font-size:11px;" aria-live="polite"></div>
       </div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <div id="yt-lyrics-actions" style="display:flex; gap:6px; align-items:center;"></div>
-        <button id="yt-lyrics-mgmt-toggle" style="background:none; border:none; color:#aaa; cursor:pointer; font-size:18px; padding:0 4px;" title="Manajemen Lirik Tersimpan">⚙️</button>
-        <button id="yt-lyrics-close" style="background:none; border:none; color:#ff4d4d; font-weight:bold; cursor:pointer; font-size:16px;">&times;</button>
+      <div style="display:flex; gap:4px;">
+        <div id="yt-lyrics-actions" style="display:flex; gap:5px; align-items:center; justify-content:flex-end; flex-wrap:wrap; max-width:530px;"></div>
+        <button id="yt-lyrics-mgmt-toggle" style="background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; padding:4px;" title="Manajemen">⚙️</button>
+        <button id="yt-lyrics-close" style="background:none; border:none; color:#ff4d4d; font-weight:bold; cursor:pointer; font-size:16px; padding:4px;">&times;</button>
       </div>
     </div>
     <div style="padding:15px; max-height:350px; overflow-y:auto; color:#ddd; font-size:14px; line-height:1.6; text-align:center; scroll-behavior:smooth;" id="yt-lyrics-content">
@@ -26,13 +26,17 @@ const widgetHTML = `
     .yt-lyric-btn-danger { color:#ff6b6b; border-color:#662222; }
     .yt-lyric-btn-primary { color:#81c995; border-color:#2a5033; }
     #yt-lyrics-source { margin:8px 0; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
-    #yt-lyrics-source input { width:360px; background:#242424; border:1px solid #555; border-radius:4px; color:#fff; padding:5px 7px; font-size:12px; }
-    #yt-lyrics-help { color:#999; font-size:11px; text-align:left; max-width:520px; margin:6px auto 12px; }
+    #yt-lyrics-source input { width:240px; background:#242424; border:1px solid #555; border-radius:4px; color:#fff; padding:5px 7px; font-size:12px; }
+    #yt-lyrics-help { color:#999; font-size:10px; text-align:left; max-width:520px; margin:4px auto 8px; }
     #yt-lyrics-body .lyric-sync-line { color: #888; margin: 10px 0; font-size: 16px; transition: color 0.2s, font-size 0.2s; }
     #yt-lyrics-body .lyric-sync-line.active { color: #ffffff; font-weight: bold; font-size: 20px; }
     #yt-lyrics-body .lyric-ori { color: #ffffff; font-weight: bold; display: block; }
     #yt-lyrics-body .lyric-romaji { color: #8ab4f8; font-style: italic; display: block; }
     #yt-lyrics-body .lyric-id { color: #81c995; display: block; margin-bottom: 15px; }
+    #yt-lyrics-body .lyric-translation { color: #81c995; display: block; font-size: 13px; font-style: italic; line-height: 1.4; margin-top: 2px; }
+    #yt-lyrics-body .lyric-sync-line.active .lyric-translation { font-size: 14px; }
+    #yt-lyrics-body.hide-translation .lyric-translation,
+    #yt-lyrics-body.hide-translation .lyric-id { display: none !important; }
     #yt-lyrics-body .loading { color: #fbbc04; font-style: italic; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0% {opacity:0.5;} 50% {opacity:1;} 100% {opacity:0.5;} }
     
@@ -120,6 +124,9 @@ function applyUiTheme(config = {}) {
     #yt-lyrics-body .lyric-id {
       color: ${theme.translationColor} !important;
     }
+    #yt-lyrics-body .lyric-translation {
+      color: ${theme.translationColor} !important;
+    }
   `;
 }
 
@@ -130,6 +137,9 @@ chrome.storage.local.get('uiConfig', ({ uiConfig }) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.uiConfig) {
     applyUiTheme(changes.uiConfig.newValue);
+  }
+  if (area === 'local' && changes.translateConfig) {
+    applyTranslateSettings(changes.translateConfig.newValue);
   }
 });
 
@@ -143,7 +153,35 @@ let currentSongInfo = null;
 let currentLyricsPayload = null;
 let isFromCache = false;
 let isLoading = false;
+let isStopped = false;
+let currentLoadToken = 0;
 let lastYouTubeVideoId = null;
+
+// Pengaturan terjemahan (chrome.storage.local "translateConfig").
+// Toggle hanya menampilkan/menyembunyikan terjemahan; proses AI tidak dipengaruhi toggle.
+let showTranslation = true;
+let translateLang = 'id';
+let translateRequestInFlight = false;
+
+function applyTranslateSettings(config = {}) {
+  showTranslation = config.show !== false;
+  translateLang = config.language || 'id';
+  bodyEl.classList.toggle('hide-translation', !showTranslation);
+  if (currentLyricsPayload?.type === 'synced') {
+    renderCurrentPayload();
+    ensureTranslation();
+  }
+}
+
+function toggleTranslationDisplay() {
+  chrome.storage.local.get('translateConfig', ({ translateConfig = {} }) => {
+    chrome.storage.local.set({ translateConfig: { ...translateConfig, show: !showTranslation } });
+  });
+}
+
+chrome.storage.local.get('translateConfig', ({ translateConfig }) => {
+  applyTranslateSettings(translateConfig);
+});
 
 function roundOffset(value) {
   return Math.round(value * 10) / 10;
@@ -161,16 +199,33 @@ function updateActionButtons() {
   };
 
   if (currentSongInfo?.fullName && !isLoading) {
-    actionsEl.appendChild(button('Refresh', '', 'Ambil ulang lirik dari sumber', () => {
+    actionsEl.appendChild(button('Refresh', '', 'Ambil ulang lirik', () => {
       chrome.runtime.sendMessage({ action: 'getActiveVideoInfo' }, (activeInfo) => {
         if (chrome.runtime.lastError || !activeInfo?.songTitle) {
-          bodyEl.innerHTML = 'Tidak ada video YouTube aktif untuk di-refresh.';
+          bodyEl.innerHTML = 'Tidak ada video YouTube aktif.';
           return;
         }
-        deleteLyrics(activeInfo.fullName, () => loadLyrics(activeInfo, true));
+        loadLyrics(activeInfo);
       });
     }));
   }
+
+  if (isLoading && !isStopped) {
+    actionsEl.appendChild(button('Stop', 'yt-lyric-btn-danger', 'Hentikan proses otomatis', () => {
+      isStopped = true;
+      currentLoadToken += 1;
+      isLoading = false;
+      bodyEl.innerHTML = 'Proses dihentikan manual.';
+      updateActionButtons();
+    }));
+  }
+
+  actionsEl.appendChild(button(
+    showTranslation ? 'Terj: ON' : 'Terj: OFF',
+    showTranslation ? 'yt-lyric-btn-primary' : '',
+    'Tampilkan/sembunyikan terjemahan per baris (proses AI tetap berjalan)',
+    toggleTranslationDisplay
+  ));
   if (!currentSongInfo?.fullName || !currentLyricsPayload || isLoading) return;
 
   if (isFromCache) {
@@ -213,6 +268,27 @@ function persistCurrentLyrics() {
   chrome.storage.local.set({ [currentSongInfo.fullName]: currentLyricsPayload });
 }
 
+// Terjemahan selalu diproses AI ke bahasa pilihan (apa pun status toggle) dan
+// disimpan ke storage; toggle hanya memengaruhi tampilan.
+function ensureTranslation() {
+  const payload = currentLyricsPayload;
+  if (!payload || payload.type !== 'synced' || !payload.data) return;
+  if (payload.translateLang === translateLang) return; // bahasa ini sudah diproses
+  if (translateRequestInFlight) return;
+
+  translateRequestInFlight = true;
+  const targetPayload = payload;
+  chrome.runtime.sendMessage({ action: 'translateLyrics', lyrics: payload.data, info: currentSongInfo }, (response) => {
+    translateRequestInFlight = false;
+    if (chrome.runtime.lastError || currentLyricsPayload !== targetPayload) return;
+    targetPayload.translateLang = response?.translateLang || translateLang;
+    targetPayload.translations = Array.isArray(response?.translations) ? response.translations : null;
+    if (isFromCache) persistCurrentLyrics();
+    if (targetPayload.translations) renderCurrentPayload();
+    ensureTranslation(); // proses ulang bila bahasa berubah saat permintaan berjalan
+  });
+}
+
 function renderCurrentPayload() {
   const lines = parseLRC(currentLyricsPayload.data).map((line) => ({
     ...line,
@@ -247,22 +323,36 @@ function deleteLyrics(key, callback) {
 
 function parseLRC(lrcText) {
   const lines = lrcText.split(/\r?\n/);
-  const regex = /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/;
-  return lines.map((line) => {
+  const regex = /^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)$/;
+  let rawIndex = 0;
+  const parsed = [];
+  lines.forEach((line) => {
     const match = regex.exec(line);
-    if (!match) return null;
+    if (!match) return;
+    // Urutan baris bertimestamp — sejajar dengan array `translations` dari background.js
+    const trIndex = rawIndex;
+    rawIndex += 1;
     const min = parseInt(match[1], 10);
     const sec = parseInt(match[2], 10);
     const ms = parseInt(match[3].padEnd(3, '0'), 10);
     const text = match[4].trim();
-    return text ? { time: min * 60 + sec + ms / 1000, text } : null;
-  }).filter(Boolean);
+    if (text) parsed.push({ time: min * 60 + sec + ms / 1000, text, trIndex });
+  });
+  return parsed;
+}
+
+function getPayloadTranslations() {
+  const payload = currentLyricsPayload;
+  if (!payload || !Array.isArray(payload.translations)) return null;
+  if (payload.translateLang && payload.translateLang !== translateLang) return null;
+  return payload.translations;
 }
 
 function renderSyncedLyrics(lines) {
   parsedLyrics = lines
     .filter((line) => Number.isFinite(line.time) && line.text)
     .sort((a, b) => a.time - b.time);
+  const translations = getPayloadTranslations();
   activeLyricIndex = -1;
   bodyEl.innerHTML = '';
   parsedLyrics.forEach((line, index) => {
@@ -270,6 +360,12 @@ function renderSyncedLyrics(lines) {
     p.id = `lyric-line-${index}`;
     p.className = 'lyric-sync-line';
     p.textContent = line.text;
+    if (showTranslation && translations && typeof translations[line.trIndex] === 'string') {
+      const span = document.createElement('span');
+      span.className = 'lyric-translation';
+      span.textContent = translations[line.trIndex];
+      p.appendChild(span);
+    }
     bodyEl.appendChild(p);
   });
   updateActiveLyric(document.querySelector('video')?.currentTime ?? 0);
@@ -284,7 +380,9 @@ function displayLyrics(payload, fromCache) {
       type: 'synced',
       data: payload.originalData || payload.data,
       originalData: payload.originalData || payload.data,
-      offset: roundOffset(Number(payload.offset) || 0)
+      offset: roundOffset(Number(payload.offset) || 0),
+      translations: Array.isArray(payload.translations) ? payload.translations : null,
+      translateLang: payload.translateLang || null
     };
   }
   currentLyricsPayload = payload;
@@ -296,6 +394,8 @@ function displayLyrics(payload, fromCache) {
     const lines = parseLRC(payload.data);
     if (lines.length) {
       renderCurrentPayload();
+      // Proses translasi AI mengikuti bahasa pilihan, apa pun status toggle tampilan
+      ensureTranslation();
       return;
     }
   }
@@ -305,19 +405,24 @@ function displayLyrics(payload, fromCache) {
 }
 
 function loadLyrics(info, forceFetch = false) {
+  const loadToken = ++currentLoadToken;
+  const isCurrentLoad = () => !isStopped && loadToken === currentLoadToken;
     currentSongInfo = info;
     currentLyricsPayload = null;
     isFromCache = false;
+  isStopped = false;
     parsedLyrics = [];
     activeLyricIndex = -1;
     titleEl.textContent = `Lagu: ${info.fullName}`;
     offsetEl.textContent = '';
     isLoading = true;
     updateActionButtons();
-    
+
     const fetchLyrics = () => {
+      if (!isCurrentLoad()) return;
         bodyEl.innerHTML = '<div class="loading">Mencari lirik sinkron di LRCLIB...</div>';
         chrome.runtime.sendMessage({ action: 'fetchSyncedLyrics', info }, (response) => {
+        if (!isCurrentLoad()) return;
             if (chrome.runtime.lastError) {
               isLoading = false;
               updateActionButtons();
@@ -329,15 +434,19 @@ function loadLyrics(info, forceFetch = false) {
                 type: 'synced',
                 data: response.lyrics,
                 originalData: response.lyrics,
-                offset: 0
+                offset: 0,
+                translations: response.translations || null,
+                translateLang: response.translateLang || null
               }, false);
                 isLoading = false;
                 updateActionButtons();
                 return;
             }
-        
+
+              if (!isCurrentLoad()) return;
             bodyEl.innerHTML = '<div class="loading">Lirik sinkron tidak ada. Mencari teks biasa...</div>';
             chrome.runtime.sendMessage({ action: 'fetchLyrics', info }, (plainResponse) => {
+                if (!isCurrentLoad()) return;
                 if (chrome.runtime.lastError) {
                   isLoading = false;
                   updateActionButtons();
@@ -350,13 +459,14 @@ function loadLyrics(info, forceFetch = false) {
             });
         });
     };
-    
+
     if (forceFetch) {
         fetchLyrics();
         return;
     }
-    
+
     chrome.storage.local.get(info.fullName, (result) => {
+    if (!isCurrentLoad()) return;
         if (result[info.fullName]) {
         isLoading = false;
             displayLyrics(result[info.fullName], true);
@@ -368,17 +478,21 @@ function loadLyrics(info, forceFetch = false) {
 
 function loadLyricsByUrl(url) {
   if (!currentSongInfo || isLoading) return;
+  const loadToken = ++currentLoadToken;
+  const isCurrentLoad = () => !isStopped && loadToken === currentLoadToken;
+  isStopped = false;
   isLoading = true;
   updateActionButtons();
   bodyEl.innerHTML = '<div class="loading">Memuat lirik dari URL LRCLIB...</div>';
   chrome.runtime.sendMessage({ action: 'fetchLyricsByLrclibUrl', url, info: currentSongInfo }, (response) => {
+    if (!isCurrentLoad()) return;
     isLoading = false;
     if (chrome.runtime.lastError || !response?.success || !response.lyrics) {
       bodyEl.innerHTML = response?.error || 'Gagal memuat URL LRCLIB.';
       updateActionButtons();
       return;
     }
-    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.lyrics, offset: 0 }, false);
+    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null }, false);
   });
 }
 
