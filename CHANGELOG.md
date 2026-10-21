@@ -2,6 +2,13 @@
 
 Format mengikuti prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versi rilis sumber utama ada di `manifest.json`.
 
+## [2.5.1] - 2026-10-21
+
+### Added
+- Ekspor lirik tersimpan ke file JSON, termasuk terjemahan dan metadata lagu.
+- Impor file JSON dengan validasi dan merge yang melewati lagu duplikat.
+- Pemuatan pack lirik komunitas dari GitHub Releases.
+
 ## [2.5] - 2026-10-20
 
 ### Added

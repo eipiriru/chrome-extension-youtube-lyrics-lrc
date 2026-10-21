@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "LRCLIB Lyrics for YouTube",
-    "version": "2.5",
+    "version": "2.5.1",
     "description": "Lirik karaoke YouTube dengan data dari LRCLIB.",
     "icons": {
       "16": "icons/icon.png",
@@ -21,7 +21,9 @@
       "https://generativelanguage.googleapis.com/*",
       "http://localhost:20128/*",
       "http://127.0.0.1:20128/*",
-      "https://lrclib.net/*"
+      "https://lrclib.net/*",
+      "https://github.com/*",
+      "https://*.githubusercontent.com/*"
     ],
     "background": {
       "service_worker": "background.js"

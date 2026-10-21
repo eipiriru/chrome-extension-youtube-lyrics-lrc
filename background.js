@@ -1,5 +1,5 @@
 // background.js
-const DEBUG = false;
+const DEBUG = true;
 const debugLog = (...args) => { if (DEBUG) console.log(...args); };
 const debugError = (...args) => { if (DEBUG) console.error(...args); };
 
@@ -99,6 +99,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+  if (request.action === "fetchLyricsPack") {
+    fetchLyricsPack().then(sendResponse);
+    return true;
+  }
   if (request.action === "fetchSyncedLyrics") {
     // searchLRCLIB(request.info, sender.tab.id)
     //   .then((res) => sendResponse(res))
@@ -133,6 +137,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+async function fetchLyricsPack() {
+  try {
+    const response = await fetch("https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/releases/latest/download/lyrics-pack.json");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    if (text.length > 5 * 1024 * 1024) throw new Error("Pack melebihi batas 5 MB.");
+    return { success: true, pack: JSON.parse(text) };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 async function searchLRCLIB(info, tabId) {
   try {
     updateStatus(tabId, `Mencari lirik bertimestamp: ${info.fullName}`);
@@ -148,7 +164,7 @@ async function searchLRCLIB(info, tabId) {
     let lyrics = match.syncedLyrics;
     debugLog("[LRCLIB] Synced lyrics ditemukan", { lines: lyrics.split(/\r?\n/).length });
     const prepared = await prepareSyncedLyrics(lyrics, info, tabId);
-    return { success: true, type: "synced", ...prepared };
+    return { success: true, type: "synced", ...prepared, lrclibId: match.id };
   } catch (error) {
     debugError("[LRCLIB] Error:", error);
     updateStatus(tabId, `Error LRCLIB: ${error.message}`);

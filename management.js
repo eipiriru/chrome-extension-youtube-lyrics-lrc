@@ -4,6 +4,10 @@ const countEl = document.getElementById('count');
 const searchEl = document.getElementById('search');
 const clearAllBtn = document.getElementById('clear-all');
 const statusEl = document.getElementById('status');
+const exportLyricsBtn = document.getElementById('export-lyrics');
+const importLyricsBtn = document.getElementById('import-lyrics');
+const loadLyricsPackBtn = document.getElementById('load-lyrics-pack');
+const importFileEl = document.getElementById('import-file');
 const geminiKeyEl = document.getElementById('cfg-gemini-key');
 const nineRouterUrlEl = document.getElementById('cfg-9router-url');
 const nineRouterKeyEl = document.getElementById('cfg-9router-key');
@@ -43,6 +47,131 @@ const DEFAULT_TRANSLATE_CONFIG = {
 };
 
 let savedItems = [];
+
+function normalizedKey(value) {
+  return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+function lyricRecord(key, payload) {
+  const separator = key.indexOf(' - ');
+  const artistName = separator < 0 ? '' : key.slice(0, separator).trim();
+  const trackName = separator < 0 ? key.trim() : key.slice(separator + 3).trim();
+  const syncedLyrics = payload.originalData || payload.data;
+  return {
+    key: normalizedKey(`${artistName} ${trackName}`),
+    trackName,
+    artistName,
+    lrclibId: Number.isInteger(payload.lrclibId) ? payload.lrclibId : null,
+    videos: Array.isArray(payload.videos) ? payload.videos : [],
+    syncedLyrics,
+    translations: payload.translateLang && Array.isArray(payload.translations)
+      ? { [payload.translateLang]: payload.translations }
+      : {},
+    translateLang: payload.translateLang || null,
+    offset: Number.isFinite(payload.offset) ? payload.offset : 0,
+    type: payload.type === 'synced' ? 'synced' : 'plain'
+  };
+}
+
+function parseLyricsPack(pack) {
+  if (!pack || pack.schemaVersion !== 1 || !Array.isArray(pack.lyrics) || pack.lyrics.length > 10000) {
+    throw new Error('Format pack tidak valid atau schemaVersion tidak didukung.');
+  }
+  return pack.lyrics.map((item) => {
+    if (!item || typeof item.trackName !== 'string' || !item.trackName.trim() || typeof item.artistName !== 'string' ||
+        !['synced', 'plain'].includes(item.type) || typeof item.syncedLyrics !== 'string' || !item.syncedLyrics.trim()) {
+      throw new Error('Pack berisi data lagu yang tidak valid.');
+    }
+    const key = `${item.artistName.trim()} - ${item.trackName.trim()}`;
+    const translations = item.translations && typeof item.translations === 'object' && !Array.isArray(item.translations)
+      ? item.translations : {};
+    const language = ['id', 'en'].includes(item.translateLang) ? item.translateLang
+      : ['id', 'en'].find((lang) => Array.isArray(translations[lang])) || null;
+    const videos = Array.isArray(item.videos) ? item.videos.filter((video) =>
+      video && typeof video.videoId === 'string' && /^[\w-]{11}$/.test(video.videoId) &&
+      (video.duration === null || (Number.isFinite(video.duration) && video.duration > 0))
+    ).map(({ videoId, duration }) => ({ videoId, duration }))
+      : Array.isArray(item.videoIds) ? item.videoIds.filter((videoId) => typeof videoId === 'string' && /^[\w-]{11}$/.test(videoId)).map((videoId) => ({ videoId, duration: null })) : [];
+    const translatedLines = language && Array.isArray(translations[language]) &&
+      translations[language].every((line) => typeof line === 'string') ? translations[language] : null;
+    const payload = {
+      type: item.type,
+      data: item.syncedLyrics,
+      lrclibId: Number.isInteger(item.lrclibId) ? item.lrclibId : null,
+      videos
+    };
+    return {
+      key,
+      payload: item.type === 'synced'
+        ? { ...payload, originalData: item.syncedLyrics, offset: Number.isFinite(item.offset) ? item.offset : 0, translations: translatedLines, translateLang: translatedLines ? language : null }
+        : payload
+    };
+  });
+}
+
+async function mergeLyricsPack(pack) {
+  const imported = parseLyricsPack(pack);
+  const existing = await chrome.storage.local.get(null);
+  const additions = {};
+  const existingKeys = new Set(Object.keys(existing).map(normalizedKey));
+  imported.forEach(({ key, payload }) => {
+    const matchKey = normalizedKey(key);
+    if (!existingKeys.has(matchKey)) {
+      additions[key] = payload;
+      existingKeys.add(matchKey);
+    }
+  });
+  const keys = Object.keys(additions);
+  if (keys.length) await chrome.storage.local.set(additions);
+  return { added: keys.length, skipped: imported.length - keys.length };
+}
+
+function exportLyricsPack() {
+  const pack = {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    lyrics: savedItems.map(({ key, payload }) => lyricRecord(key, payload))
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'youtube-lyrics-pack.json';
+  link.click();
+  URL.revokeObjectURL(url);
+  showStatus(`${pack.lyrics.length} lagu diekspor.`);
+}
+
+exportLyricsBtn.onclick = exportLyricsPack;
+importLyricsBtn.onclick = () => importFileEl.click();
+importFileEl.onchange = async () => {
+  const file = importFileEl.files[0];
+  importFileEl.value = '';
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) return showStatus('Ukuran file melebihi batas 5 MB.');
+  try {
+    const result = await mergeLyricsPack(JSON.parse(await file.text()));
+    showStatus(`Impor selesai: ${result.added} ditambahkan, ${result.skipped} dilewati.`);
+  } catch (error) {
+    showStatus(`Impor gagal: ${error.message}`);
+  }
+};
+
+loadLyricsPackBtn.onclick = () => {
+  loadLyricsPackBtn.disabled = true;
+  chrome.runtime.sendMessage({ action: 'fetchLyricsPack' }, async (response) => {
+    loadLyricsPackBtn.disabled = false;
+    if (chrome.runtime.lastError || !response?.success) {
+      showStatus(`Gagal memuat pack: ${response?.error || chrome.runtime.lastError?.message || 'Kesalahan tidak diketahui.'}`);
+      return;
+    }
+    try {
+      const result = await mergeLyricsPack(response.pack);
+      showStatus(`Pack dimuat: ${result.added} ditambahkan, ${result.skipped} dilewati.`);
+    } catch (error) {
+      showStatus(`Pack tidak valid: ${error.message}`);
+    }
+  });
+};
 
 function showStatus(message) {
   statusEl.textContent = message;

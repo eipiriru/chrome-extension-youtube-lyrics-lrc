@@ -234,7 +234,9 @@ function updateActionButtons() {
     }));
   } else {
     actionsEl.appendChild(button('Simpan', 'yt-lyric-btn-primary', 'Simpan lirik ke local storage', () => {
-      chrome.storage.local.set({ [currentSongInfo.fullName]: currentLyricsPayload }, () => {
+      const payload = withCurrentVideoMetadata(currentLyricsPayload);
+      chrome.storage.local.set({ [currentSongInfo.fullName]: payload }, () => {
+        currentLyricsPayload = payload;
         isFromCache = true;
         updateActionButtons();
         refreshMgmtListIfOpen();
@@ -266,6 +268,22 @@ function updateOffsetInfo() {
 function persistCurrentLyrics() {
   if (!isFromCache || !currentSongInfo || !currentLyricsPayload) return;
   chrome.storage.local.set({ [currentSongInfo.fullName]: currentLyricsPayload });
+}
+
+function withCurrentVideoMetadata(payload) {
+  const videoId = getYouTubeVideoId();
+  if (!videoId) return payload;
+  const duration = getActiveVideo()?.duration;
+  const videos = Array.isArray(payload.videos) ? payload.videos : [];
+  const existing = videos.find((video) => video.videoId === videoId);
+  const video = {
+    videoId,
+    duration: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : existing?.duration ?? null
+  };
+  return {
+    ...payload,
+    videos: [...videos.filter((item) => item.videoId !== videoId), video]
+  };
 }
 
 // Terjemahan selalu diproses AI ke bahasa pilihan (apa pun status toggle) dan
@@ -382,7 +400,9 @@ function displayLyrics(payload, fromCache) {
       originalData: payload.originalData || payload.data,
       offset: roundOffset(Number(payload.offset) || 0),
       translations: Array.isArray(payload.translations) ? payload.translations : null,
-      translateLang: payload.translateLang || null
+      translateLang: payload.translateLang || null,
+      lrclibId: Number.isInteger(payload.lrclibId) ? payload.lrclibId : null,
+      videos: Array.isArray(payload.videos) ? payload.videos : []
     };
   }
   currentLyricsPayload = payload;
@@ -436,7 +456,8 @@ function loadLyrics(info, forceFetch = false) {
                 originalData: response.lyrics,
                 offset: 0,
                 translations: response.translations || null,
-                translateLang: response.translateLang || null
+                translateLang: response.translateLang || null,
+                lrclibId: response.lrclibId || null
               }, false);
                 isLoading = false;
                 updateActionButtons();
@@ -469,7 +490,11 @@ function loadLyrics(info, forceFetch = false) {
     if (!isCurrentLoad()) return;
         if (result[info.fullName]) {
         isLoading = false;
-            displayLyrics(result[info.fullName], true);
+            const cachedPayload = withCurrentVideoMetadata(result[info.fullName]);
+            if (cachedPayload !== result[info.fullName]) {
+              chrome.storage.local.set({ [info.fullName]: cachedPayload });
+            }
+            displayLyrics(cachedPayload, true);
             return;
         }
         fetchLyrics();
@@ -492,7 +517,7 @@ function loadLyricsByUrl(url) {
       updateActionButtons();
       return;
     }
-    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null }, false);
+    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null }, false);
   });
 }
 
