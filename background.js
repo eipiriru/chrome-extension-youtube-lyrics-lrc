@@ -1,5 +1,5 @@
 // background.js
-const DEBUG = true;
+const DEBUG = false;
 const debugLog = (...args) => { if (DEBUG) console.log(...args); };
 const debugError = (...args) => { if (DEBUG) console.error(...args); };
 
