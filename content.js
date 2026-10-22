@@ -2,10 +2,12 @@
 
 // 1. Buat elemen Widget UI
 const widgetHTML = `
-  <div id="yt-lyrics-widget" style="display:none; position:fixed; top:80px; right:20px; width:min(720px, calc(100vw - 32px)); background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: 'Segoe UI', Tahoma, sans-serif; overflow:hidden;">
+  <div id="yt-lyrics-widget" style="display:none; flex-direction:column; position:fixed; top:80px; left:calc(100vw - min(720px, calc(100vw - 32px)) - 20px); width:min(620px, calc(100vw - 32px)); height:400px; min-width:min(320px, calc(100vw - 24px)); min-height:180px; max-width:calc(100vw - 24px); max-height:calc(100vh - 100px); background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:'Segoe UI',Tahoma,sans-serif; overflow:hidden; resize:both;">
     <div id="yt-lyrics-header" style="background:#202020; padding:12px; cursor:grab; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #333;">
-      <div style="display:flex; align-items:center; gap:8px;">
+      <div id="yt-lyrics-drag-handle" title="Seret untuk memindahkan widget" style="display:flex; align-items:center; gap:8px; min-height:30px; padding:4px 8px; margin:-4px 0; border:1px dashed #555; border-radius:5px; color:#bbb; cursor:grab; user-select:none;">
+        <span aria-hidden="true" style="letter-spacing:-2px; font-size:16px; line-height:1;">⠿</span>
         <span style="color:#fff; font-weight:bold; font-size:14px;">🎵 Lyrics</span>
+        <span id="yt-lyrics-version" style="color:#777; font-size:10px;"></span>
         <div id="yt-lyrics-offset" style="color:#aaa; font-size:11px;" aria-live="polite"></div>
       </div>
       <div style="display:flex; gap:4px;">
@@ -14,7 +16,7 @@ const widgetHTML = `
         <button id="yt-lyrics-close" style="background:none; border:none; color:#ff4d4d; font-weight:bold; cursor:pointer; font-size:16px; padding:4px;">&times;</button>
       </div>
     </div>
-    <div style="padding:15px; max-height:350px; overflow-y:auto; color:#ddd; font-size:14px; line-height:1.6; text-align:center; scroll-behavior:smooth;" id="yt-lyrics-content">
+    <div style="padding:15px; height:350px; flex:1; min-height:0; overflow:auto; color:#ddd; font-size:14px; line-height:1.6; text-align:center; scroll-behavior:smooth;" id="yt-lyrics-content">
       <div id="yt-lyrics-title" style="color:#aaa; font-weight:bold; margin-bottom:15px; font-size:12px;"></div>
       <div id="yt-lyrics-body"></div>
     </div>
@@ -53,13 +55,16 @@ const widgetHTML = `
 document.body.insertAdjacentHTML('beforeend', widgetHTML);
 
 const widget = document.getElementById('yt-lyrics-widget');
+document.getElementById('yt-lyrics-version').textContent = `v${chrome.runtime.getManifest().version}`;
 const header = document.getElementById('yt-lyrics-header');
+const dragHandle = document.getElementById('yt-lyrics-drag-handle');
 const closeBtn = document.getElementById('yt-lyrics-close');
 const mgmtToggleBtn = document.getElementById('yt-lyrics-mgmt-toggle');
 const actionsEl = document.getElementById('yt-lyrics-actions');
 const titleEl = document.getElementById('yt-lyrics-title');
 const offsetEl = document.getElementById('yt-lyrics-offset');
 const bodyEl = document.getElementById('yt-lyrics-body');
+const contentEl = document.getElementById('yt-lyrics-content');
 const sourceEl = document.createElement('div');
 sourceEl.id = 'yt-lyrics-source';
 sourceEl.innerHTML = `
@@ -77,11 +82,23 @@ customThemeStyle.id = 'yt-lyrics-theme-style';
 const DEFAULT_UI_CONFIG = {
   backgroundColor: '#181818',
   backgroundOpacity: 95,
+  backdropBlur: 2,
   activeColor: '#ffffff',
-  inactiveColor: '#888888',
-  romajiColor: '#8ab4f8',
-  translationColor: '#81c995',
-  activeFontSize: 20
+  inactiveColor: '#a6a6a6',
+  romajiColor: '#a9c7ff',
+  translationColor: '#a6dfb5',
+  showOriginal: true,
+  originalColor: '#ffffff',
+  activeFontSize: 24,
+  inactiveFontSize: 16,
+  originalFontSize: 18,
+  romajiFontSize: 18,
+  translationFontSize: 14,
+  activeFontStyle: 'bold',
+  inactiveFontStyle: 'normal',
+  originalFontStyle: 'bold',
+  romajiFontStyle: 'italic',
+  translationFontStyle: 'italic'
 };
 
 function hexToRgba(hex, alphaPercent) {
@@ -103,40 +120,78 @@ function applyUiTheme(config = {}) {
   const headerRgba = hexToRgba(theme.backgroundColor, Math.min(100, theme.backgroundOpacity + 5));
 
   widget.style.background = bgRgba;
-  widget.style.backdropFilter = theme.backgroundOpacity < 100 ? 'blur(8px)' : 'none';
+  const backdropBlur = Math.min(20, Math.max(0, Number(theme.backdropBlur) || 0));
+  widget.style.backdropFilter = backdropBlur ? `blur(${backdropBlur}px)` : 'none';
   header.style.background = headerRgba;
 
   customThemeStyle.textContent = `
     #yt-lyrics-body .lyric-sync-line {
       color: ${theme.inactiveColor} !important;
+      font-size: ${theme.inactiveFontSize}px !important;
+      font-style: ${theme.inactiveFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.inactiveFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
+    }
+    #yt-lyrics-body .lyric-sync-line:not(.active) .lyric-romaji {
+      color: ${theme.inactiveColor} !important;
+      font-size: ${theme.inactiveFontSize}px !important;
+      font-style: ${theme.inactiveFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.inactiveFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
     }
     #yt-lyrics-body .lyric-sync-line.active {
       color: ${theme.activeColor} !important;
       font-size: ${theme.activeFontSize}px !important;
+      font-style: ${theme.activeFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.activeFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.45);
+    }
+    #yt-lyrics-body .lyric-sync-line.active .lyric-romaji {
+      color: ${theme.activeColor} !important;
+      font-size: ${theme.activeFontSize}px !important;
+      font-style: ${theme.activeFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.activeFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
       text-shadow: 0 1px 6px rgba(0,0,0,0.45);
     }
     #yt-lyrics-body .lyric-ori {
-      color: ${theme.activeColor} !important;
+      color: ${theme.originalColor} !important;
+      font-size: ${theme.originalFontSize}px !important;
+      font-style: ${theme.originalFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.originalFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
+    }
+    #yt-lyrics-body .lyric-original {
+      color: ${theme.originalColor} !important;
+      font-size: ${theme.originalFontSize}px !important;
+      font-style: ${theme.originalFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.originalFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
+      display: block;
     }
     #yt-lyrics-body .lyric-romaji {
       color: ${theme.romajiColor} !important;
+      font-size: ${theme.romajiFontSize}px !important;
+      font-style: ${theme.romajiFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.romajiFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
     }
     #yt-lyrics-body .lyric-id {
       color: ${theme.translationColor} !important;
     }
     #yt-lyrics-body .lyric-translation {
       color: ${theme.translationColor} !important;
+      font-size: ${theme.translationFontSize}px !important;
+      font-style: ${theme.translationFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.translationFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
     }
   `;
 }
 
 chrome.storage.local.get('uiConfig', ({ uiConfig }) => {
+  showOriginalLyrics = uiConfig?.showOriginal !== false;
   applyUiTheme(uiConfig);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.uiConfig) {
+    showOriginalLyrics = changes.uiConfig.newValue?.showOriginal !== false;
     applyUiTheme(changes.uiConfig.newValue);
+    if (currentLyricsPayload?.type === 'synced') renderCurrentPayload();
   }
   if (area === 'local' && changes.translateConfig) {
     applyTranslateSettings(changes.translateConfig.newValue);
@@ -156,6 +211,8 @@ let isLoading = false;
 let isStopped = false;
 let currentLoadToken = 0;
 let lastYouTubeVideoId = null;
+let lastSourceVideoId = null;
+let showOriginalLyrics = true;
 
 // Pengaturan terjemahan (chrome.storage.local "translateConfig").
 // Toggle hanya menampilkan/menyembunyikan terjemahan; proses AI tidak dipengaruhi toggle.
@@ -166,17 +223,17 @@ let translateRequestInFlight = false;
 function applyTranslateSettings(config = {}) {
   showTranslation = config.show !== false;
   translateLang = config.language || 'id';
-  bodyEl.classList.toggle('hide-translation', !showTranslation);
   if (currentLyricsPayload?.type === 'synced') {
     renderCurrentPayload();
     ensureTranslation();
   }
 }
 
-function toggleTranslationDisplay() {
-  chrome.storage.local.get('translateConfig', ({ translateConfig = {} }) => {
-    chrome.storage.local.set({ translateConfig: { ...translateConfig, show: !showTranslation } });
-  });
+function toggleCurrentLyricVisibility(key) {
+  if (!currentLyricsPayload?.type || !(key in currentLyricsPayload)) return;
+  currentLyricsPayload[key] = !currentLyricsPayload[key];
+  renderCurrentPayload();
+  persistCurrentLyrics();
 }
 
 chrome.storage.local.get('translateConfig', ({ translateConfig }) => {
@@ -220,17 +277,26 @@ function updateActionButtons() {
     }));
   }
 
-  actionsEl.appendChild(button(
-    showTranslation ? 'Terj: ON' : 'Terj: OFF',
-    showTranslation ? 'yt-lyric-btn-primary' : '',
-    'Tampilkan/sembunyikan terjemahan per baris (proses AI tetap berjalan)',
-    toggleTranslationDisplay
-  ));
   if (!currentSongInfo?.fullName || !currentLyricsPayload || isLoading) return;
+
+  if (currentLyricsPayload.type === 'synced') {
+    actionsEl.appendChild(button(
+      currentLyricsPayload.showTranslation ? 'Terj: ON' : 'Terj: OFF',
+      currentLyricsPayload.showTranslation ? 'yt-lyric-btn-primary' : '',
+      'Tampilkan/sembunyikan terjemahan untuk lirik ini',
+      () => toggleCurrentLyricVisibility('showTranslation')
+    ));
+    actionsEl.appendChild(button(
+      currentLyricsPayload.showOriginal ? 'Asli: ON' : 'Asli: OFF',
+      currentLyricsPayload.showOriginal ? 'yt-lyric-btn-primary' : '',
+      'Tampilkan/sembunyikan lirik asli untuk lirik ini',
+      () => toggleCurrentLyricVisibility('showOriginal')
+    ));
+  }
 
   if (isFromCache) {
     actionsEl.appendChild(button('Hapus', 'yt-lyric-btn-danger', 'Hapus lirik tersimpan', () => {
-      deleteLyrics(currentSongInfo.fullName, refreshMgmtListIfOpen);
+      deleteLyrics(currentSongInfo.fullName);
     }));
   } else {
     actionsEl.appendChild(button('Simpan', 'yt-lyric-btn-primary', 'Simpan lirik ke local storage', () => {
@@ -239,7 +305,6 @@ function updateActionButtons() {
         currentLyricsPayload = payload;
         isFromCache = true;
         updateActionButtons();
-        refreshMgmtListIfOpen();
       });
     }));
   }
@@ -331,11 +396,11 @@ function resetTimestamp() {
   persistCurrentLyrics();
 }
 
-function deleteLyrics(key, callback) {
+function deleteLyrics(key) {
   chrome.storage.local.remove(key, () => {
+    if (chrome.runtime.lastError) return;
     isFromCache = false;
     updateActionButtons();
-    callback?.();
   });
 }
 
@@ -371,14 +436,27 @@ function renderSyncedLyrics(lines) {
     .filter((line) => Number.isFinite(line.time) && line.text)
     .sort((a, b) => a.time - b.time);
   const translations = getPayloadTranslations();
+  const originalLines = currentLyricsPayload?.originalData
+    ? parseLRC(currentLyricsPayload.originalData)
+    : [];
   activeLyricIndex = -1;
   bodyEl.innerHTML = '';
   parsedLyrics.forEach((line, index) => {
     const p = document.createElement('p');
     p.id = `lyric-line-${index}`;
     p.className = 'lyric-sync-line';
-    p.textContent = line.text;
-    if (showTranslation && translations && typeof translations[line.trIndex] === 'string') {
+    const originalText = originalLines.find((original) => original.trIndex === line.trIndex)?.text;
+    if (originalText && currentLyricsPayload.showOriginal) {
+      const span = document.createElement('span');
+      span.className = 'lyric-original';
+      span.textContent = originalText;
+      p.appendChild(span);
+    }
+    const romaji = document.createElement('span');
+    romaji.className = 'lyric-romaji';
+    romaji.textContent = line.text;
+    p.appendChild(romaji);
+    if (currentLyricsPayload.showTranslation && translations && typeof translations[line.trIndex] === 'string') {
       const span = document.createElement('span');
       span.className = 'lyric-translation';
       span.textContent = translations[line.trIndex];
@@ -396,17 +474,23 @@ function displayLyrics(payload, fromCache) {
   if (payload.type === 'synced') {
     payload = {
       type: 'synced',
-      data: payload.originalData || payload.data,
+      data: payload.data,
       originalData: payload.originalData || payload.data,
       offset: roundOffset(Number(payload.offset) || 0),
       translations: Array.isArray(payload.translations) ? payload.translations : null,
       translateLang: payload.translateLang || null,
+      showOriginal: typeof payload.showOriginal === 'boolean' ? payload.showOriginal : showOriginalLyrics,
+      showTranslation: typeof payload.showTranslation === 'boolean' ? payload.showTranslation : showTranslation,
       lrclibId: Number.isInteger(payload.lrclibId) ? payload.lrclibId : null,
-      videos: Array.isArray(payload.videos) ? payload.videos : []
+      videos: Array.isArray(payload.videos) ? payload.videos : [],
+      lrclibUrl: typeof payload.lrclibUrl === 'string' && payload.lrclibUrl
+        ? payload.lrclibUrl
+        : Number.isInteger(payload.lrclibId) ? `https://lrclib.net/tracks/${payload.lrclibId}` : ''
     };
   }
   currentLyricsPayload = payload;
   isFromCache = fromCache;
+  lyricsUrlInput.value = payload.type === 'synced' ? payload.lrclibUrl || '' : '';
   updateOffsetInfo();
   updateActionButtons();
 
@@ -435,6 +519,7 @@ function loadLyrics(info, forceFetch = false) {
     activeLyricIndex = -1;
     titleEl.textContent = `Lagu: ${info.fullName}`;
     offsetEl.textContent = '';
+    lyricsUrlInput.value = '';
     isLoading = true;
     updateActionButtons();
 
@@ -453,11 +538,12 @@ function loadLyrics(info, forceFetch = false) {
               displayLyrics({
                 type: 'synced',
                 data: response.lyrics,
-                originalData: response.lyrics,
+                originalData: response.originalLyrics || response.lyrics,
                 offset: 0,
                 translations: response.translations || null,
                 translateLang: response.translateLang || null,
-                lrclibId: response.lrclibId || null
+                lrclibId: response.lrclibId || null,
+                lrclibUrl: response.lrclibUrl || ''
               }, false);
                 isLoading = false;
                 updateActionButtons();
@@ -517,7 +603,7 @@ function loadLyricsByUrl(url) {
       updateActionButtons();
       return;
     }
-    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null }, false);
+    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.originalLyrics || response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null, lrclibUrl: response.lrclibUrl || url }, false);
   });
 }
 
@@ -548,7 +634,12 @@ function updateActiveLyric(currentTime) {
   const current = document.getElementById(`lyric-line-${targetIndex}`);
   if (current) {
     current.classList.add('active');
-    current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const contentRect = contentEl.getBoundingClientRect();
+    const lineRect = current.getBoundingClientRect();
+    contentEl.scrollTo({
+      top: contentEl.scrollTop + lineRect.top - contentRect.top - (contentEl.clientHeight - current.offsetHeight) / 2,
+      behavior: 'smooth'
+    });
   }
 }
 
@@ -607,9 +698,12 @@ setInterval(() => {
     }
   });
 
-  chrome.runtime.sendMessage({ action: 'getRawTitle' }, (response) => {
+  chrome.runtime.sendMessage({ action: 'getActiveVideoInfo' }, (response) => {
     if (chrome.runtime.lastError || !response?.songTitle) return;
-    if (!currentSongInfo || response.fullName !== currentSongInfo.fullName) {
+    const videoChanged = response.videoId && response.videoId !== lastSourceVideoId;
+
+    if (!currentSongInfo || videoChanged || response.fullName !== currentSongInfo.fullName) {
+      lastSourceVideoId = response.videoId || null;
       loadLyrics(response);
     }
   });
@@ -652,17 +746,16 @@ function getYouTubeInfo() {
   let currentX, currentY, initialX, initialY;
   let xOffset = 0, yOffset = 0;
   
-  header.addEventListener('mousedown', dragStart);
+  dragHandle.addEventListener('mousedown', dragStart);
   document.addEventListener('mousemove', drag);
   document.addEventListener('mouseup', dragEnd);
   
   function dragStart(e) {
+    if (e.button !== 0) return;
     initialX = e.clientX - xOffset;
     initialY = e.clientY - yOffset;
-    if (e.target === header || e.target.parentNode === header) {
-      isDragging = true;
-      header.style.cursor = 'grabbing';
-    }
+    isDragging = true;
+    dragHandle.style.cursor = 'grabbing';
   }
   function drag(e) {
     if (isDragging) {
@@ -678,7 +771,7 @@ function getYouTubeInfo() {
     initialX = currentX;
     initialY = currentY;
     isDragging = false;
-    header.style.cursor = 'grab';
+    dragHandle.style.cursor = 'grab';
   }
   
   // 4. Logika Buka/Tutup & Load Data
@@ -696,9 +789,9 @@ function getYouTubeInfo() {
     }
     
     if (request.action === "toggleWidget") {
-      widget.style.display = widget.style.display === 'none' ? 'block' : 'none';
+      widget.style.display = widget.style.display === 'none' ? 'flex' : 'none';
       
-      if (widget.style.display === 'block') {
+      if (widget.style.display === 'flex') {
         const info = request.info; // Data sekarang berbentuk objek
         
         if (!info || !info.songTitle) {

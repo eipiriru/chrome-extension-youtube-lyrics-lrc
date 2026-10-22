@@ -14,19 +14,18 @@
     }
     header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
       margin-bottom: 14px;
     }
     h1 { font-size: 16px; color: #fff; }
-    #count { color: #888; font-size: 12px; }
+    #count { color: #888; font-size: 12px; white-space: nowrap; display: inline-flex; align-items: center; }
     .tabs { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid #333; }
     .tab { border:0; border-radius:4px 4px 0 0; color:#999; background:transparent; padding:9px 12px; font-size:13px; }
     .tab[aria-selected="true"] { color:#81c995; background:#222; box-shadow: inset 0 -2px #81c995; }
     [role="tabpanel"][hidden] { display:none; }
     .config-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; align-items:start; }
-    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .toolbar input {
+    .search-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+    .search-row input {
       flex: 1;
       background: #242424;
       border: 1px solid #555;
@@ -35,7 +34,31 @@
       padding: 7px 9px;
       font-size: 13px;
     }
-    .toolbar input:focus { outline: none; border-color: #81c995; }
+    .search-row input:focus { outline: none; border-color: #81c995; }
+    .actions-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px 8px 12px;
+      flex-wrap: wrap;
+    }
+    .select-all-wrap {
+      display: flex;
+      align-items: center;
+      width: 18px;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+    .select-all-wrap input { width: 14px; height: 14px; margin: 0; accent-color: #81c995; cursor: pointer; }
+    .actions-buttons {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+    .actions-danger { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+    .actions-row [hidden] { display: none; }
     button {
       background: #2a2a2a;
       border: 1px solid #444;
@@ -51,15 +74,18 @@
     .btn-primary { color: #81c995; border-color: #2a5033; }
     #list { background: #222; border-radius: 6px; overflow: hidden; }
     .item {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
       align-items: center;
       gap: 10px;
       padding: 10px 12px;
       border-bottom: 1px solid #333;
     }
     .item:last-child { border-bottom: none; }
-    .item-info { min-width: 0; }
+    .item { cursor: pointer; }
+    .item[aria-selected="true"] { background: #29372e; }
+    .item button, .item a, .item input { cursor: pointer; }
+    .item-info { min-width: 0; width: 100%; }
     .item-title {
       color: #fff;
       font-size: 13px;
@@ -68,8 +94,12 @@
       text-overflow: ellipsis;
     }
     .item-meta { color: #777; font-size: 11px; margin-top: 2px; }
+    .item-select { width: 14px; height: 14px; margin: 0; accent-color: #81c995; }
+    .item-actions { display: flex; gap: 6px; }
+    .item-lrc-url { display: inline-block; max-width: 180px; margin-top: 4px; overflow: hidden; padding: 2px 6px; border: 1px solid #35563e; border-radius: 4px; background: #202a23; color: #81c995; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+    .item-lrc-url:hover { background: #2a3b30; text-decoration: underline; }
     .empty { padding: 24px; text-align: center; color: #666; }
-    #status { color: #fbbc04; font-size: 12px; min-height: 16px; margin-top: 10px; }
+    [data-status] { color: #fbbc04; font-size: 12px; min-height: 16px; margin-top: 10px; }
     .section { background: #222; border-radius: 6px; padding: 12px; margin-bottom: 14px; }
     .section h2 {
       font-size: 13px; color: #fff; margin-bottom: 10px;
@@ -92,6 +122,15 @@
     .range-wrap { display: flex; align-items: center; gap: 8px; }
     .range-wrap input[type="range"] { flex: 1; cursor: pointer; }
     .range-val { font-size: 12px; color: #81c995; min-width: 42px; text-align: right; }
+    .text-style-list { display: grid; gap: 7px; }
+    .text-style-row { display: grid; grid-template-columns: minmax(76px, 1fr) 66px 76px 42px; gap: 8px; align-items: center; background: #292929; border: 1px solid #383838; border-radius: 5px; padding: 8px; }
+    .text-style-row strong { font-size: 12px; color: #ddd; }
+    .text-style-row input[type="number"] { width: 100%; min-width: 0; background: #202020; border: 1px solid #444; border-radius: 4px; color: #fff; padding: 7px 6px; font-size: 12px; }
+    .text-style-row input[type="color"] { width: 42px; height: 34px; padding: 2px; cursor: pointer; background: #202020; border: 1px solid #444; border-radius: 4px; }
+    .style-toggles { display: flex; gap: 4px; }
+    .style-toggle { min-width: 36px; padding: 6px 9px; border-color: #484848; color: #aaa; font-weight: 400; }
+    .style-toggle[data-style="italic"] { font-style: italic; }
+    .style-toggle[aria-pressed="true"] { color: #d9f6e0; border-color: #50845d; background: #294333; box-shadow: inset 0 0 0 1px #386344; }
     .field input:focus { outline: none; border-color: #81c995; }
     .field select {
       width: 100%; background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
@@ -115,13 +154,18 @@
     .release h2 { color:#81c995; font-size:15px; margin-bottom:4px; }
     .release time { color:#888; font-size:11px; }
     .release ul { padding-left:18px; margin-top:10px; color:#bbb; line-height:1.6; }
+    .pack-request { margin: 0 12px 10px; color: #999; font-size: 12px; }
+    .pack-request a { color: #81c995; }
     @media (max-width: 640px) { .config-grid { grid-template-columns:1fr; gap:0; } }
+    @media (max-width: 600px) { .actions-danger { margin-left: 0; } }
+    @media (max-width: 440px) { .item { grid-template-columns: 18px minmax(0, 1fr); gap: 7px; padding: 9px; } .item-actions { grid-column: 3; grid-row: 1; } }
+    @media (max-width: 440px) { .text-style-row { grid-template-columns: minmax(65px, 1fr) 54px 68px 36px; gap: 4px; padding: 6px; } .text-style-row input[type="color"] { width: 36px; } }
   </style>
 </head>
 <body>
   <header>
     <h1>🎵 Manajemen Data</h1>
-    <span id="count"></span>
+    <span id="app-version" style="margin-left:auto; color:#888; font-size:12px;"></span>
   </header>
   <nav class="tabs" role="tablist" aria-label="Bagian manajemen">
     <button class="tab" id="tab-lyrics" role="tab" aria-selected="true" aria-controls="panel-lyrics">Lirik tersimpan</button>
@@ -130,16 +174,29 @@
     <button class="tab" id="tab-changelog" role="tab" aria-selected="false" aria-controls="panel-changelog" tabindex="-1">Changelog</button>
   </nav>
   <section id="panel-lyrics" role="tabpanel" aria-labelledby="tab-lyrics">
-    <div class="toolbar">
+    <div class="search-row">
       <input id="search" type="text" placeholder="Cari judul lagu..." aria-label="Cari judul lagu">
-      <button id="export-lyrics" class="btn-primary">Ekspor JSON</button>
-      <button id="import-lyrics">Impor JSON</button>
-      <button id="load-lyrics-pack">Muat Pack Resmi</button>
-      <input id="import-file" type="file" accept="application/json,.json" hidden>
-      <button id="clear-all" class="btn-danger">Hapus Semua</button>
+      <span id="count"></span>
     </div>
+    <div class="actions-row">
+      <div class="select-all-wrap">
+        <input id="select-all" type="checkbox" title="Pilih semua hasil" aria-label="Pilih semua hasil">
+      </div>
+      <div class="actions-buttons">
+        <button id="export-lyrics" class="btn-primary">Ekspor Semua</button>
+        <button id="export-selected" class="btn-primary" hidden>Ekspor Terpilih</button>
+        <button id="import-lyrics">Impor JSON</button>
+        <button id="load-lyrics-pack">Load latest pack release</button>
+        <input id="import-file" type="file" accept="application/json,.json" hidden>
+      </div>
+      <div class="actions-danger">
+        <button id="delete-selected" class="btn-danger" hidden>Hapus Terpilih</button>
+        <button id="clear-all" class="btn-danger">Hapus Semua</button>
+      </div>
+    </div>
+    <p class="pack-request">Lirik lagu belum ada? <a href="https://forms.gle/gs9XVFNYfWBvZGyZ8" target="_blank" rel="noopener noreferrer">Ajukan request.</a></p>
     <div id="list"></div>
-    <div id="status" role="status" aria-live="polite"></div>
+    <div id="lyrics-status" data-status role="status" aria-live="polite"></div>
   </section>
   <section id="panel-config" role="tabpanel" aria-labelledby="tab-config" hidden>
   <div class="config-grid">
@@ -153,35 +210,24 @@
       <div class="field">
         <label for="cfg-ui-bg-opacity">Transparansi Background</label>
         <div class="range-wrap">
-          <input id="cfg-ui-bg-opacity" type="range" min="10" max="100" value="95">
+          <input id="cfg-ui-bg-opacity" type="range" min="0" max="100" value="95">
           <span id="cfg-ui-bg-opacity-val" class="range-val">95%</span>
         </div>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label for="cfg-ui-active-color">Warna Lirik Aktif</label>
-          <input id="cfg-ui-active-color" type="color" value="#ffffff">
-        </div>
-        <div class="field">
-          <label for="cfg-ui-inactive-color">Warna Lirik Pasif</label>
-          <input id="cfg-ui-inactive-color" type="color" value="#888888">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label for="cfg-ui-romaji-color">Warna Romaji</label>
-          <input id="cfg-ui-romaji-color" type="color" value="#8ab4f8">
-        </div>
-        <div class="field">
-          <label for="cfg-ui-translation-color">Warna Arti / ID</label>
-          <input id="cfg-ui-translation-color" type="color" value="#81c995">
-        </div>
+      <div class="field">
+        <label for="cfg-ui-backdrop-blur">Backdrop blur (px)</label>
+        <input id="cfg-ui-backdrop-blur" type="number" min="0" max="20" step="1" value="2">
+        <div class="hint">0 = tanpa blur. Batas aman: 0–20px.</div>
       </div>
       <div class="field">
-        <label for="cfg-ui-font-size">Ukuran Font Lirik Aktif (px)</label>
-        <div class="range-wrap">
-          <input id="cfg-ui-font-size" type="range" min="14" max="32" value="20">
-          <span id="cfg-ui-font-size-val" class="range-val">20px</span>
+        <label>Tipografi karaoke</label>
+        <div class="hint">Atur ukuran (px), gaya teks, dan warna.</div>
+        <div class="text-style-list">
+          <div class="text-style-row"><strong>Teks aktif</strong><input id="cfg-ui-active-font-size" type="number" min="8" max="48" value="24" aria-label="Ukuran teks aktif"><div class="style-toggles" role="group" aria-label="Gaya teks aktif"><button type="button" class="style-toggle" data-style-role="active" data-style="bold" aria-pressed="true" aria-label="Tebal">B</button><button type="button" class="style-toggle" data-style-role="active" data-style="italic" aria-pressed="false" aria-label="Miring">I</button></div><input id="cfg-ui-active-color" type="color" value="#ffffff" aria-label="Warna teks aktif"></div>
+          <div class="text-style-row"><strong>Teks pasif</strong><input id="cfg-ui-inactive-font-size" type="number" min="8" max="48" value="16" aria-label="Ukuran teks pasif"><div class="style-toggles" role="group" aria-label="Gaya teks pasif"><button type="button" class="style-toggle" data-style-role="inactive" data-style="bold" aria-pressed="false" aria-label="Tebal">B</button><button type="button" class="style-toggle" data-style-role="inactive" data-style="italic" aria-pressed="false" aria-label="Miring">I</button></div><input id="cfg-ui-inactive-color" type="color" value="#a6a6a6" aria-label="Warna teks pasif"></div>
+          <div class="text-style-row"><strong>Lirik asli</strong><input id="cfg-ui-original-font-size" type="number" min="8" max="48" value="18" aria-label="Ukuran lirik asli"><div class="style-toggles" role="group" aria-label="Gaya lirik asli"><button type="button" class="style-toggle" data-style-role="original" data-style="bold" aria-pressed="true" aria-label="Tebal">B</button><button type="button" class="style-toggle" data-style-role="original" data-style="italic" aria-pressed="false" aria-label="Miring">I</button></div><input id="cfg-ui-original-color" type="color" value="#ffffff" aria-label="Warna lirik asli"></div>
+          <div class="text-style-row"><strong>Romaji</strong><input id="cfg-ui-romaji-font-size" type="number" min="8" max="48" value="18" aria-label="Ukuran teks romaji"><div class="style-toggles" role="group" aria-label="Gaya teks romaji"><button type="button" class="style-toggle" data-style-role="romaji" data-style="bold" aria-pressed="false" aria-label="Tebal">B</button><button type="button" class="style-toggle" data-style-role="romaji" data-style="italic" aria-pressed="true" aria-label="Miring">I</button></div><input id="cfg-ui-romaji-color" type="color" value="#a9c7ff" aria-label="Warna teks romaji"></div>
+          <div class="text-style-row"><strong>Terjemahan</strong><input id="cfg-ui-translation-font-size" type="number" min="8" max="48" value="14" aria-label="Ukuran teks terjemahan"><div class="style-toggles" role="group" aria-label="Gaya teks terjemahan"><button type="button" class="style-toggle" data-style-role="translation" data-style="bold" aria-pressed="false" aria-label="Tebal">B</button><button type="button" class="style-toggle" data-style-role="translation" data-style="italic" aria-pressed="true" aria-label="Miring">I</button></div><input id="cfg-ui-translation-color" type="color" value="#a6dfb5" aria-label="Warna teks terjemahan"></div>
         </div>
       </div>
       <div class="cfg-actions">
@@ -207,7 +253,7 @@
       </div>
       <div class="field">
         <label for="cfg-9router-model">9Router — Model</label>
-        <input id="cfg-9router-model" type="text" placeholder="combo-gptag">
+        <input id="cfg-9router-model" type="text" placeholder="gemini-flash">
       </div>
       <div class="cfg-actions">
         <button id="cfg-save" class="btn-primary">Simpan Konfigurasi</button>
@@ -231,6 +277,12 @@
           Tampilkan terjemahan per baris di widget
         </label>
       </div>
+      <div class="field">
+        <label class="check" for="cfg-ui-show-original">
+          <input id="cfg-ui-show-original" type="checkbox" checked>
+          Tampilkan lirik asli per baris di widget
+        </label>
+      </div>
       <p class="hint">Toggle hanya menampilkan/menyembunyikan terjemahan. AI tetap menerjemahkan ke bahasa pilihan di atas dan hasilnya disimpan bersama liriknya — berapa pun status toggle-nya.</p>
       <div class="cfg-actions">
         <button id="cfg-translate-save" class="btn-primary">Simpan Terjemahan</button>
@@ -239,6 +291,7 @@
     </div>
   </div>
   </div>
+  <div id="config-status" data-status role="status" aria-live="polite"></div>
   </section>
   <section id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
   <div class="section">
@@ -259,12 +312,21 @@
         <li>Konfigurasi API di atas disimpan di penyimpanan lokal browser dan dipakai untuk semua pemrosesan AI (romaji, terjemahan, formatting, dan fallback). Kedua API key bersifat opsional.</li>
         <li>Panduan API: dapatkan Gemini API key gratis di <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Google AI Studio</a>. Untuk 9Router lokal (port default 20128), isi URL ke <code>http://localhost:20128/v1/chat/completions</code> atau <code>http://127.0.0.1:20128/v1/chat/completions</code>.</li>
         <li>Untuk development, ubah <code>DEBUG</code> di <code>background.js</code> menjadi <code>true</code> agar log muncul di console. Sebelum push, ubah kembali ke <code>false</code>.</li>
-        <li>Proyek independen. Lirik sinkron didukung oleh <a href="https://lrclib.net/" target="_blank" rel="noreferrer">LRCLIB — Free & Open Lyrics Library</a> (<a href="https://github.com/tranxuanthang/lrclib" target="_blank" rel="noreferrer">GitHub</a>).</li>
+        <li>Proyek independen. Sinkronisasi lirik bergantung pada <a href="https://lrclib.net/" target="_blank" rel="noreferrer">LRCLIB — Free & Open Lyrics Library</a> (<a href="https://github.com/tranxuanthang/lrclib" target="_blank" rel="noreferrer">GitHub</a>).</li>
       </ol>
     </div>
   </div>
+  <div id="guide-status" data-status role="status" aria-live="polite"></div>
   </section>
   <section id="panel-changelog" role="tabpanel" aria-labelledby="tab-changelog" hidden>
+    <article class="release">
+      <h2>Versi 2.5.2</h2>
+      <time datetime="2026-10-22">22 Oktober 2026</time>
+      <ul>
+        <li>Tambah tampilan lirik asli.</li>
+        <li>Sesuaikan UI dan manajemen lirik.</li>
+      </ul>
+    </article>
     <article class="release">
       <h2>Versi 2.5.1</h2>
       <time datetime="2026-10-21">21 Oktober 2026</time>
@@ -290,6 +352,7 @@
         <li>Fitur dasar: widget lirik karaoke, pencarian LRCLIB, penyimpanan lirik lokal, dan pengelolaan offset sinkronisasi.</li>
       </ul>
     </article>
+    <div id="changelog-status" data-status role="status" aria-live="polite"></div>
   </section>
   <script src="management.js"></script>
 </body>

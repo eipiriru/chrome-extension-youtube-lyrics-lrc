@@ -2,6 +2,14 @@
 
 Format mengikuti prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versi rilis sumber utama ada di `manifest.json`.
 
+## [2.5.2] - 2026-10-22
+
+### Added
+- Tampilan lirik asli.
+
+### Changed
+- Penyesuaian UI dan manajemen lirik.
+
 ## [2.5.1] - 2026-10-21
 
 ### Added

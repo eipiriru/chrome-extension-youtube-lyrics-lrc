@@ -3,8 +3,10 @@ const listEl = document.getElementById('list');
 const countEl = document.getElementById('count');
 const searchEl = document.getElementById('search');
 const clearAllBtn = document.getElementById('clear-all');
-const statusEl = document.getElementById('status');
 const exportLyricsBtn = document.getElementById('export-lyrics');
+const exportSelectedBtn = document.getElementById('export-selected');
+const deleteSelectedBtn = document.getElementById('delete-selected');
+const selectAllEl = document.getElementById('select-all');
 const importLyricsBtn = document.getElementById('import-lyrics');
 const loadLyricsPackBtn = document.getElementById('load-lyrics-pack');
 const importFileEl = document.getElementById('import-file');
@@ -17,12 +19,18 @@ const resetConfigBtn = document.getElementById('cfg-reset');
 const uiBgColorEl = document.getElementById('cfg-ui-bg-color');
 const uiBgOpacityEl = document.getElementById('cfg-ui-bg-opacity');
 const uiBgOpacityValEl = document.getElementById('cfg-ui-bg-opacity-val');
+const uiBackdropBlurEl = document.getElementById('cfg-ui-backdrop-blur');
 const uiActiveColorEl = document.getElementById('cfg-ui-active-color');
 const uiInactiveColorEl = document.getElementById('cfg-ui-inactive-color');
 const uiRomajiColorEl = document.getElementById('cfg-ui-romaji-color');
 const uiTranslationColorEl = document.getElementById('cfg-ui-translation-color');
-const uiFontSizeEl = document.getElementById('cfg-ui-font-size');
-const uiFontSizeValEl = document.getElementById('cfg-ui-font-size-val');
+const uiShowOriginalEl = document.getElementById('cfg-ui-show-original');
+const uiTextStyles = ['active', 'inactive', 'original', 'romaji', 'translation'].map((role) => ({
+  role,
+  size: document.getElementById(`cfg-ui-${role}-font-size`),
+  color: document.getElementById(`cfg-ui-${role}-color`),
+  toggles: Array.from(document.querySelectorAll(`[data-style-role="${role}"]`))
+}));
 const saveUiConfigBtn = document.getElementById('cfg-ui-save');
 const resetUiConfigBtn = document.getElementById('cfg-ui-reset');
 const translateLangEl = document.getElementById('cfg-translate-lang');
@@ -30,15 +38,28 @@ const translateShowEl = document.getElementById('cfg-translate-show');
 const saveTranslateConfigBtn = document.getElementById('cfg-translate-save');
 const resetTranslateConfigBtn = document.getElementById('cfg-translate-reset');
 const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+document.getElementById('app-version').textContent = `Versi ${chrome.runtime.getManifest().version}`;
 
 const DEFAULT_UI_CONFIG = {
   backgroundColor: '#181818',
   backgroundOpacity: 95,
+  backdropBlur: 2,
   activeColor: '#ffffff',
-  inactiveColor: '#888888',
-  romajiColor: '#8ab4f8',
-  translationColor: '#81c995',
-  activeFontSize: 20
+  inactiveColor: '#a6a6a6',
+  romajiColor: '#a9c7ff',
+  translationColor: '#a6dfb5',
+  showOriginal: true,
+  originalColor: '#ffffff',
+  activeFontSize: 24,
+  inactiveFontSize: 16,
+  originalFontSize: 18,
+  romajiFontSize: 18,
+  translationFontSize: 14,
+  activeFontStyle: 'bold',
+  inactiveFontStyle: 'normal',
+  originalFontStyle: 'bold',
+  romajiFontStyle: 'italic',
+  translationFontStyle: 'italic'
 };
 
 const DEFAULT_TRANSLATE_CONFIG = {
@@ -47,6 +68,7 @@ const DEFAULT_TRANSLATE_CONFIG = {
 };
 
 let savedItems = [];
+const selectedKeys = new Set();
 
 function normalizedKey(value) {
   return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -62,8 +84,12 @@ function lyricRecord(key, payload) {
     trackName,
     artistName,
     lrclibId: Number.isInteger(payload.lrclibId) ? payload.lrclibId : null,
+    lrclibUrl: typeof payload.lrclibUrl === 'string' ? payload.lrclibUrl : null,
     videos: Array.isArray(payload.videos) ? payload.videos : [],
     syncedLyrics,
+    romajiLyrics: payload.data,
+    showOriginal: typeof payload.showOriginal === 'boolean' ? payload.showOriginal : undefined,
+    showTranslation: typeof payload.showTranslation === 'boolean' ? payload.showTranslation : undefined,
     translations: payload.translateLang && Array.isArray(payload.translations)
       ? { [payload.translateLang]: payload.translations }
       : {},
@@ -96,8 +122,11 @@ function parseLyricsPack(pack) {
       translations[language].every((line) => typeof line === 'string') ? translations[language] : null;
     const payload = {
       type: item.type,
-      data: item.syncedLyrics,
+      data: item.type === 'synced' ? (item.romajiLyrics || item.syncedLyrics) : item.syncedLyrics,
       lrclibId: Number.isInteger(item.lrclibId) ? item.lrclibId : null,
+      lrclibUrl: typeof item.lrclibUrl === 'string' && /^https:\/\/lrclib\.net\/tracks\/\d+\/?$/.test(item.lrclibUrl) ? item.lrclibUrl : '',
+      ...(typeof item.showOriginal === 'boolean' ? { showOriginal: item.showOriginal } : {}),
+      ...(typeof item.showTranslation === 'boolean' ? { showTranslation: item.showTranslation } : {}),
       videos
     };
     return {
@@ -126,11 +155,11 @@ async function mergeLyricsPack(pack) {
   return { added: keys.length, skipped: imported.length - keys.length };
 }
 
-function exportLyricsPack() {
+function exportLyricsPack(items = savedItems) {
   const pack = {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    lyrics: savedItems.map(({ key, payload }) => lyricRecord(key, payload))
+    lyrics: items.map(({ key, payload }) => lyricRecord(key, payload))
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' }));
   const link = document.createElement('a');
@@ -142,6 +171,14 @@ function exportLyricsPack() {
 }
 
 exportLyricsBtn.onclick = exportLyricsPack;
+exportSelectedBtn.onclick = () => exportLyricsPack(savedItems.filter(({ key }) => selectedKeys.has(key)));
+deleteSelectedBtn.onclick = deleteSelectedLyrics;
+selectAllEl.onchange = () => {
+  const query = searchEl.value.trim().toLowerCase();
+  const visible = query ? savedItems.filter(({ key }) => key.toLowerCase().includes(query)) : savedItems;
+  visible.forEach(({ key }) => selectAllEl.checked ? selectedKeys.add(key) : selectedKeys.delete(key));
+  render();
+};
 importLyricsBtn.onclick = () => importFileEl.click();
 importFileEl.onchange = async () => {
   const file = importFileEl.files[0];
@@ -174,8 +211,12 @@ loadLyricsPackBtn.onclick = () => {
 };
 
 function showStatus(message) {
+  const panel = document.querySelector('[role="tabpanel"]:not([hidden])');
+  const statusEl = panel?.querySelector('[data-status]');
+  if (!statusEl) return;
   statusEl.textContent = message;
-  setTimeout(() => { statusEl.textContent = ''; }, 2500);
+  clearTimeout(statusEl.statusTimer);
+  statusEl.statusTimer = setTimeout(() => { statusEl.textContent = ''; }, 2500);
 }
 
 function render() {
@@ -200,6 +241,30 @@ function render() {
     const row = document.createElement('div');
     row.className = 'item';
 
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'item-select';
+    checkbox.checked = selectedKeys.has(key);
+    checkbox.setAttribute('aria-label', `Pilih ${key}`);
+    row.tabIndex = 0;
+    row.setAttribute('aria-selected', String(checkbox.checked));
+    checkbox.onchange = () => {
+      checkbox.checked ? selectedKeys.add(key) : selectedKeys.delete(key);
+      row.setAttribute('aria-selected', String(checkbox.checked));
+      updateSelectionControls(items);
+    };
+    row.onclick = (event) => {
+      if (event.target.closest('button, a, input, label')) return;
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change'));
+    };
+    row.onkeydown = (event) => {
+      if (event.target !== row || ![' ', 'Enter'].includes(event.key)) return;
+      event.preventDefault();
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change'));
+    };
+
     const info = document.createElement('div');
     info.className = 'item-info';
 
@@ -219,18 +284,64 @@ function render() {
     info.appendChild(title);
     info.appendChild(meta);
 
+    if (payload?.lrclibUrl) {
+      const lrcUrl = document.createElement('a');
+      lrcUrl.className = 'item-lrc-url';
+      lrcUrl.href = payload.lrclibUrl;
+      lrcUrl.target = '_blank';
+      lrcUrl.rel = 'noopener noreferrer';
+      lrcUrl.textContent = payload.lrclibUrl;
+      lrcUrl.title = payload.lrclibUrl;
+      info.appendChild(lrcUrl);
+    }
+
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-danger';
     delBtn.textContent = 'Hapus';
     delBtn.onclick = () => {
       chrome.storage.local.remove(key, () => {
+        if (chrome.runtime.lastError) {
+          showStatus(`Gagal menghapus "${key}": ${chrome.runtime.lastError.message}`);
+          return;
+        }
+        loadItems();
         showStatus(`"${key}" dihapus.`);
       });
     };
 
+    const actions = document.createElement('div');
+    actions.className = 'item-actions';
+    actions.appendChild(delBtn);
+    row.appendChild(checkbox);
     row.appendChild(info);
-    row.appendChild(delBtn);
+    row.appendChild(actions);
     listEl.appendChild(row);
+  });
+  updateSelectionControls(items);
+}
+
+function updateSelectionControls(visibleItems) {
+  const visibleKeys = visibleItems.map(({ key }) => key);
+  const selectedVisibleCount = visibleKeys.filter((key) => selectedKeys.has(key)).length;
+  selectAllEl.checked = visibleKeys.length > 0 && selectedVisibleCount === visibleKeys.length;
+  selectAllEl.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleKeys.length;
+  const selectedCount = selectedKeys.size;
+  exportSelectedBtn.hidden = selectedCount === 0;
+  deleteSelectedBtn.hidden = selectedCount === 0;
+  countEl.textContent = `${savedItems.length} lagu${selectedCount ? ` · ${selectedCount} dipilih` : ''}`;
+}
+
+function deleteSelectedLyrics() {
+  const keys = [...selectedKeys].filter((key) => savedItems.some((item) => item.key === key));
+  if (!keys.length || !confirm(`Hapus ${keys.length} lirik terpilih?`)) return;
+  chrome.storage.local.remove(keys, () => {
+    if (chrome.runtime.lastError) {
+      showStatus(`Gagal menghapus: ${chrome.runtime.lastError.message}`);
+      return;
+    }
+    keys.forEach((key) => selectedKeys.delete(key));
+    loadItems();
+    showStatus(`${keys.length} lirik dihapus.`);
   });
 }
 
@@ -260,12 +371,17 @@ function loadUiConfig(config = {}) {
   uiBgColorEl.value = ui.backgroundColor;
   uiBgOpacityEl.value = ui.backgroundOpacity;
   uiBgOpacityValEl.textContent = `${ui.backgroundOpacity}%`;
-  uiActiveColorEl.value = ui.activeColor;
-  uiInactiveColorEl.value = ui.inactiveColor;
-  uiRomajiColorEl.value = ui.romajiColor;
-  uiTranslationColorEl.value = ui.translationColor;
-  uiFontSizeEl.value = ui.activeFontSize;
-  uiFontSizeValEl.textContent = `${ui.activeFontSize}px`;
+  uiBackdropBlurEl.value = Math.min(20, Math.max(0, Number(ui.backdropBlur) || 0));
+  uiShowOriginalEl.checked = ui.showOriginal !== false;
+  uiTextStyles.forEach(({ role, size, color, toggles }) => {
+    size.value = Math.min(48, Math.max(8, Number(ui[`${role}FontSize`]) || DEFAULT_UI_CONFIG[`${role}FontSize`]));
+    color.value = ui[`${role}Color`];
+    const fontStyle = ['normal', 'bold', 'italic', 'bold-italic'].includes(ui[`${role}FontStyle`])
+      ? ui[`${role}FontStyle`] : DEFAULT_UI_CONFIG[`${role}FontStyle`];
+    toggles.forEach((button) => {
+      button.setAttribute('aria-pressed', String(fontStyle.includes(button.dataset.style)));
+    });
+  });
 }
 
 function loadTranslateConfig(config = {}) {
@@ -278,11 +394,13 @@ function getUiConfigFromForm() {
   return {
     backgroundColor: uiBgColorEl.value,
     backgroundOpacity: Number(uiBgOpacityEl.value),
-    activeColor: uiActiveColorEl.value,
-    inactiveColor: uiInactiveColorEl.value,
-    romajiColor: uiRomajiColorEl.value,
-    translationColor: uiTranslationColorEl.value,
-    activeFontSize: Number(uiFontSizeEl.value)
+    backdropBlur: Math.min(20, Math.max(0, Number(uiBackdropBlurEl.value) || 0)),
+    showOriginal: uiShowOriginalEl.checked,
+    ...Object.fromEntries(uiTextStyles.flatMap(({ role, size, color, toggles }) => [
+      [`${role}Color`, color.value],
+      [`${role}FontSize`, Math.min(48, Math.max(8, Number(size.value) || 8))],
+      [`${role}FontStyle`, toggles.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.dataset.style).join('-') || 'normal']
+    ]))
   };
 }
 
@@ -336,10 +454,6 @@ uiBgOpacityEl.oninput = () => {
   uiBgOpacityValEl.textContent = `${uiBgOpacityEl.value}%`;
 };
 
-uiFontSizeEl.oninput = () => {
-  uiFontSizeValEl.textContent = `${uiFontSizeEl.value}px`;
-};
-
 saveUiConfigBtn.onclick = () => {
   chrome.storage.local.set({ uiConfig: getUiConfigFromForm() }, () => {
     showStatus('Konfigurasi tampilan disimpan.');
@@ -360,6 +474,12 @@ saveTranslateConfigBtn.onclick = () => {
   };
   chrome.storage.local.set({ translateConfig: config }, () => {
     showStatus('Konfigurasi terjemahan disimpan.');
+  });
+};
+
+uiShowOriginalEl.onchange = () => {
+  chrome.storage.local.get('uiConfig', ({ uiConfig = {} }) => {
+    chrome.storage.local.set({ uiConfig: { ...uiConfig, showOriginal: uiShowOriginalEl.checked } });
   });
 };
 
@@ -390,6 +510,13 @@ tabs.forEach((tab) => {
         : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
     tabs[index].focus();
     selectTab(tabs[index]);
+  };
+});
+
+document.querySelectorAll('.style-toggle').forEach((button) => {
+  button.onclick = () => {
+    const pressed = button.getAttribute('aria-pressed') !== 'true';
+    button.setAttribute('aria-pressed', String(pressed));
   };
 });
 

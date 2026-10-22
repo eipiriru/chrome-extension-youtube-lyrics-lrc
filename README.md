@@ -44,6 +44,10 @@ Fungsi inti lirik sinkron ekstensi ini bergantung pada data dan API dari [LRCLIB
 6. Gunakan tombol `🔗` untuk memuat URL track LRCLIB jika hasil pencarian salah.
 7. Klik `⚙️` untuk mengelola cache lirik dan konfigurasi AI.
 
+## Request Lagu
+
+Lagu yang belum ada di lyrics pack bisa diajukan melalui [form request lagu](https://forms.gle/gs9XVFNYfWBvZGyZ8).
+
 ## Konfigurasi AI Opsional
 
 Ekstensi tetap berfungsi tanpa konfigurasi AI:
@@ -65,7 +69,7 @@ Isi seluruh field 9Router:
 
 - **Base URL Chat Completions**: `http://localhost:20128/v1/chat/completions`
 - **API Key**: key dari instance 9Router Anda, jika diperlukan.
-- **Model**: nama model yang tersedia pada instance Anda, misalnya `combo-gptag`.
+- **Model**: nama model yang tersedia pada instance Anda, misalnya `gemini-flash`.
 
 `9Router` tidak dipanggil jika URL, key, atau model kosong.
 

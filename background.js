@@ -65,6 +65,10 @@ function sendMessageSafely(tabId, message) {
   chrome.tabs.sendMessage(tabId, message, () => { chrome.runtime.lastError; });
 }
 
+function selectYouTubeTab(tabs) {
+  return tabs.find((tab) => tab.audible) || tabs.find((tab) => tab.active) || tabs[0] || null;
+}
+
 // Fungsi pembantu untuk mencetak log dan mengirim status ke UI (Widget)
 function updateStatus(tabId, message) {
   debugLog(`[Status AI Lyrics]: ${message}`);
@@ -75,7 +79,7 @@ function updateStatus(tabId, message) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "getVideoTime") {
     chrome.tabs.query({ url: "*://*.youtube.com/watch*" }, (ytTabs) => {
-      const ytTab = ytTabs.find((tab) => tab.audible) || ytTabs[0];
+      const ytTab = selectYouTubeTab(ytTabs);
       if (!ytTab) {
         sendResponse({ time: null });
         return;
@@ -88,13 +92,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request.action === "getActiveVideoInfo") {
     chrome.tabs.query({ url: "*://*.youtube.com/watch*" }, (ytTabs) => {
-      const ytTab = ytTabs.find((tab) => tab.audible) || ytTabs[0];
+      const ytTab = selectYouTubeTab(ytTabs);
       if (!ytTab) {
         sendResponse(null);
         return;
       }
       chrome.tabs.sendMessage(ytTab.id, { action: "getRawTitle" }, (response) => {
-        sendResponse(chrome.runtime.lastError || !response?.songTitle ? null : response);
+        const videoId = new URL(ytTab.url).searchParams.get("v");
+        sendResponse(chrome.runtime.lastError || !response?.songTitle ? null : { ...response, videoId });
       });
     });
     return true;
@@ -164,7 +169,7 @@ async function searchLRCLIB(info, tabId) {
     let lyrics = match.syncedLyrics;
     debugLog("[LRCLIB] Synced lyrics ditemukan", { lines: lyrics.split(/\r?\n/).length });
     const prepared = await prepareSyncedLyrics(lyrics, info, tabId);
-    return { success: true, type: "synced", ...prepared, lrclibId: match.id };
+    return { success: true, type: "synced", ...prepared, lrclibId: match.id, lrclibUrl: `https://lrclib.net/tracks/${match.id}` };
   } catch (error) {
     debugError("[LRCLIB] Error:", error);
     updateStatus(tabId, `Error LRCLIB: ${error.message}`);
@@ -185,7 +190,7 @@ async function getLRCLIBByUrl(url, info, tabId) {
     if (!record.syncedLyrics) return { success: false, error: "Rekaman LRCLIB ini tidak memiliki lirik bertimestamp." };
 
     const prepared = await prepareSyncedLyrics(record.syncedLyrics, info, tabId);
-    return { success: true, type: "synced", ...prepared, lrclibId: record.id };
+    return { success: true, type: "synced", ...prepared, lrclibId: record.id, lrclibUrl: url };
   } catch (error) {
     debugError("[LRCLIB] URL error:", error);
     return { success: false, error: error.message };
@@ -238,7 +243,7 @@ async function prepareSyncedLyrics(lyrics, info, tabId) {
 
   const { language } = await getTranslateConfig();
   const translations = await translateSyncedLyrics(prepared, info, tabId, language);
-  return { lyrics: prepared, translations, translateLang: language };
+  return { originalLyrics: lyrics, lyrics: prepared, translations, translateLang: language };
 }
 
 // Terjemahkan lirik sinkron per baris ke bahasa pilihan.

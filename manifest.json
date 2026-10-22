@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "LRCLIB Lyrics for YouTube",
-    "version": "2.5.1",
+    "version": "2.5.2",
     "description": "Lirik karaoke YouTube dengan data dari LRCLIB.",
     "icons": {
       "16": "icons/icon.png",
