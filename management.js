@@ -83,24 +83,24 @@ function lyricRecord(key, payload) {
   const separator = key.indexOf(' - ');
   const artistName = separator < 0 ? '' : key.slice(0, separator).trim();
   const trackName = separator < 0 ? key.trim() : key.slice(separator + 3).trim();
-  const syncedLyrics = payload.originalData || payload.data;
+  const syncedLyrics = payload?.originalData || payload?.data || '';
   return {
     key: normalizedKey(`${artistName} ${trackName}`),
     trackName,
     artistName,
-    lrclibId: Number.isInteger(payload.lrclibId) ? payload.lrclibId : null,
-    lrclibUrl: typeof payload.lrclibUrl === 'string' ? payload.lrclibUrl : null,
-    videos: Array.isArray(payload.videos) ? payload.videos : [],
+    lrclibId: Number.isInteger(payload?.lrclibId) ? payload.lrclibId : null,
+    lrclibUrl: typeof payload?.lrclibUrl === 'string' ? payload.lrclibUrl : null,
+    videos: Array.isArray(payload?.videos) ? payload.videos : [],
     syncedLyrics,
-    romajiLyrics: payload.data,
-    showOriginal: typeof payload.showOriginal === 'boolean' ? payload.showOriginal : undefined,
-    showTranslation: typeof payload.showTranslation === 'boolean' ? payload.showTranslation : undefined,
-    translations: payload.translateLang && Array.isArray(payload.translations)
+    romajiLyrics: payload?.data || '',
+    showOriginal: typeof payload?.showOriginal === 'boolean' ? payload.showOriginal : undefined,
+    showTranslation: typeof payload?.showTranslation === 'boolean' ? payload.showTranslation : undefined,
+    translations: payload?.translateLang && Array.isArray(payload?.translations)
       ? { [payload.translateLang]: payload.translations }
       : {},
-    translateLang: payload.translateLang || null,
-    offset: Number.isFinite(payload.offset) ? payload.offset : 0,
-    type: payload.type === 'synced' ? 'synced' : 'plain'
+    translateLang: payload?.translateLang || null,
+    offset: Number.isFinite(payload?.offset) ? payload.offset : 0,
+    type: payload?.type === 'synced' ? 'synced' : 'plain'
   };
 }
 
@@ -161,21 +161,33 @@ async function mergeLyricsPack(pack) {
 }
 
 function exportLyricsPack(items = savedItems) {
-  const pack = {
-    schemaVersion: 1,
-    exportedAt: new Date().toISOString(),
-    lyrics: items.map(({ key, payload }) => lyricRecord(key, payload))
-  };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'youtube-lyrics-pack.json';
-  link.click();
-  URL.revokeObjectURL(url);
-  showStatus(`${pack.lyrics.length} lagu diekspor.`);
+  const targetItems = Array.isArray(items) ? items : savedItems;
+  if (!targetItems.length) {
+    showStatus('Tidak ada lirik untuk diekspor.');
+    return;
+  }
+  try {
+    const pack = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      lyrics: targetItems.map(({ key, payload }) => lyricRecord(key, payload))
+    };
+    const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'youtube-lyrics-pack.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showStatus(`${pack.lyrics.length} lagu diekspor.`);
+  } catch (err) {
+    showStatus(`Gagal mengekspor: ${err.message}`);
+  }
 }
 
-exportLyricsBtn.onclick = exportLyricsPack;
+exportLyricsBtn.onclick = () => exportLyricsPack(savedItems);
 exportSelectedBtn.onclick = () => exportLyricsPack(savedItems.filter(({ key }) => selectedKeys.has(key)));
 deleteSelectedBtn.onclick = deleteSelectedLyrics;
 selectAllEl.onchange = () => {
