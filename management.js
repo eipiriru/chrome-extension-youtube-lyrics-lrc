@@ -10,10 +10,15 @@ const selectAllEl = document.getElementById('select-all');
 const importLyricsBtn = document.getElementById('import-lyrics');
 const loadLyricsPackBtn = document.getElementById('load-lyrics-pack');
 const importFileEl = document.getElementById('import-file');
+const geminiEnabledEl = document.getElementById('cfg-gemini-enabled');
 const geminiKeyEl = document.getElementById('cfg-gemini-key');
+const nineRouterEnabledEl = document.getElementById('cfg-9router-enabled');
 const nineRouterUrlEl = document.getElementById('cfg-9router-url');
 const nineRouterKeyEl = document.getElementById('cfg-9router-key');
 const nineRouterModelEl = document.getElementById('cfg-9router-model');
+const openRouterEnabledEl = document.getElementById('cfg-openrouter-enabled');
+const openRouterKeyEl = document.getElementById('cfg-openrouter-key');
+const openRouterModelEl = document.getElementById('cfg-openrouter-model');
 const saveConfigBtn = document.getElementById('cfg-save');
 const resetConfigBtn = document.getElementById('cfg-reset');
 const uiBgColorEl = document.getElementById('cfg-ui-bg-color');
@@ -357,10 +362,15 @@ function loadItems() {
 
 function loadConfig() {
   chrome.storage.local.get(['aiConfig', 'uiConfig', 'translateConfig'], ({ aiConfig = {}, uiConfig = {}, translateConfig = {} }) => {
+    geminiEnabledEl.checked = aiConfig.geminiEnabled !== false;
     geminiKeyEl.value = aiConfig.geminiApiKey || '';
+    nineRouterEnabledEl.checked = aiConfig.nineRouterEnabled !== false;
     nineRouterUrlEl.value = aiConfig.nineRouterUrl || '';
     nineRouterKeyEl.value = aiConfig.nineRouterApiKey || '';
     nineRouterModelEl.value = aiConfig.nineRouterModel || '';
+    openRouterEnabledEl.checked = aiConfig.openRouterEnabled !== false;
+    openRouterKeyEl.value = aiConfig.openRouterApiKey || '';
+    openRouterModelEl.value = aiConfig.openRouterModel || '';
     loadUiConfig(uiConfig);
     loadTranslateConfig(translateConfig);
   });
@@ -406,10 +416,15 @@ function getUiConfigFromForm() {
 
 function getConfigFromForm() {
   return {
+    geminiEnabled: geminiEnabledEl.checked,
     geminiApiKey: geminiKeyEl.value.trim(),
+    nineRouterEnabled: nineRouterEnabledEl.checked,
     nineRouterUrl: nineRouterUrlEl.value.trim(),
     nineRouterApiKey: nineRouterKeyEl.value.trim(),
-    nineRouterModel: nineRouterModelEl.value.trim()
+    nineRouterModel: nineRouterModelEl.value.trim(),
+    openRouterEnabled: openRouterEnabledEl.checked,
+    openRouterApiKey: openRouterKeyEl.value.trim(),
+    openRouterModel: openRouterModelEl.value.trim(),
   };
 }
 

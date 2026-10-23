@@ -240,8 +240,20 @@
     <h2 data-target="config-body">⚙️ Konfigurasi AI <span class="chevron">▼</span></h2>
     <div class="section-body" id="config-body">
       <div class="field">
+        <label class="check" for="cfg-gemini-enabled">
+          <input id="cfg-gemini-enabled" type="checkbox" checked>
+          Aktifkan Gemini
+        </label>
+      </div>
+      <div class="field">
         <label for="cfg-gemini-key">Gemini API Key</label>
         <input id="cfg-gemini-key" type="password" placeholder="Opsional — kosongkan untuk melewati Gemini">
+      </div>
+      <div class="field">
+        <label class="check" for="cfg-9router-enabled">
+          <input id="cfg-9router-enabled" type="checkbox" checked>
+          Aktifkan 9Router
+        </label>
       </div>
       <div class="field">
         <label for="cfg-9router-url">9Router — Base URL Chat Completions</label>
@@ -254,6 +266,20 @@
       <div class="field">
         <label for="cfg-9router-model">9Router — Model</label>
         <input id="cfg-9router-model" type="text" placeholder="gemini-flash">
+      </div>
+      <div class="field">
+        <label class="check" for="cfg-openrouter-enabled">
+          <input id="cfg-openrouter-enabled" type="checkbox" checked>
+          Aktifkan OpenRouter
+        </label>
+      </div>
+      <div class="field">
+        <label for="cfg-openrouter-key">OpenRouter — API Key</label>
+        <input id="cfg-openrouter-key" type="password" placeholder="Opsional — kosongkan untuk melewati OpenRouter">
+      </div>
+      <div class="field">
+        <label for="cfg-openrouter-model">OpenRouter — Model</label>
+        <input id="cfg-openrouter-model" type="text" placeholder="openrouter/free">
       </div>
       <div class="cfg-actions">
         <button id="cfg-save" class="btn-primary">Simpan Konfigurasi</button>

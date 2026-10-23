@@ -1,14 +1,17 @@
 // background.js
-const DEBUG = true;
+const DEBUG = false;
 const debugLog = (...args) => { if (DEBUG) console.log(...args); };
 const debugError = (...args) => { if (DEBUG) console.error(...args); };
 
 // Nilai default; bisa ditimpa lewat konfigurasi di halaman Manajemen (chrome.storage.local "aiConfig")
 const DEFAULT_AI_CONFIG = {
+  geminiEnabled: true,
   geminiApiKey: "",
+  nineRouterEnabled: true,
   nineRouterUrl: "",
   nineRouterApiKey: "",
   nineRouterModel: "",
+  openRouterEnabled: true,
   openRouterApiKey: "",
   openRouterModel: ""
 };
@@ -205,8 +208,9 @@ async function transliterateSyncedLyrics(lrc, info, tabId) {
 
   const config = await getAIConfig();
   const providers = [
-    ...(config.geminiApiKey ? ["Gemini"] : []),
-    ...(config.nineRouterApiKey ? ["9Router"] : [])
+    ...(config.geminiEnabled !== false && config.geminiApiKey ? ["Gemini"] : []),
+    ...(config.nineRouterEnabled !== false && config.nineRouterApiKey ? ["9Router"] : []),
+    ...(config.openRouterEnabled !== false && config.openRouterApiKey ? ["OpenRouter"] : [])
   ];
   if (!providers.length) return lrc;
 
@@ -215,6 +219,8 @@ async function transliterateSyncedLyrics(lrc, info, tabId) {
       updateStatus(tabId, `Transliterasi lirik via ${provider}...`);
       const text = provider === "9Router"
         ? await request9Router(prompt, config)
+        : provider === "OpenRouter"
+        ? await requestOpenRouter(prompt, config)
         : await requestGemini(prompt, config);
       if (!text) continue;
       const translated = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim());
@@ -266,8 +272,9 @@ async function translateSyncedLyrics(lrc, info, tabId, language) {
 
   const config = await getAIConfig();
   const providers = [
-    ...(config.geminiApiKey ? ["Gemini"] : []),
-    ...(config.nineRouterApiKey ? ["9Router"] : [])
+    ...(config.geminiEnabled !== false && config.geminiApiKey ? ["Gemini"] : []),
+    ...(config.nineRouterEnabled !== false && config.nineRouterApiKey ? ["9Router"] : []),
+    ...(config.openRouterEnabled !== false && config.openRouterApiKey ? ["OpenRouter"] : [])
   ];
   if (!providers.length) return null;
 
@@ -276,6 +283,8 @@ async function translateSyncedLyrics(lrc, info, tabId, language) {
       updateStatus(tabId, `Menerjemahkan lirik ke ${target} via ${provider}...`);
       const text = provider === "9Router"
         ? await request9Router(prompt, config)
+        : provider === "OpenRouter"
+        ? await requestOpenRouter(prompt, config)
         : await requestGemini(prompt, config);
       if (!text) continue;
       const translated = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim());
@@ -327,22 +336,28 @@ async function requestGemini(prompt, cfg) {
 async function handleLyricsSearch(info, tabId) {
     updateStatus(tabId, `Memulai pencarian untuk: ${info.fullName}`);
 
-    updateStatus(tabId, "1/3: Mencari lirik mentah di Kazelyrics...");
+    updateStatus(tabId, "1/4: Mencari lirik mentah di Kazelyrics...");
     let rawLyrics = await searchKazelyrics(info.songTitle);
     debugLog("[Alur Lirik] Hasil Kazelyrics:", { rawLyrics });
 
     const config = await getAIConfig();
     let finalHTML = null;
-    if (config.geminiApiKey) {
-      updateStatus(tabId, "2/3: Merapikan lirik dengan Gemini...");
+    if (config.geminiEnabled !== false && config.geminiApiKey) {
+      updateStatus(tabId, "2/4: Merapikan lirik dengan Gemini...");
       finalHTML = await processWithGemini(info, rawLyrics, tabId);
       debugLog("[Alur Lirik] Hasil Gemini:", { finalHTML });
     }
 
-    if (!finalHTML && config.nineRouterApiKey) {
-      updateStatus(tabId, "2/3: Gemini gagal. Mencoba 9Router...");
+    if (!finalHTML && config.nineRouterEnabled !== false && config.nineRouterApiKey) {
+      updateStatus(tabId, "3/4: Gemini gagal. Mencoba 9Router...");
       finalHTML = await processWith9Router(info, rawLyrics, tabId);
       debugLog("[Alur Lirik] Hasil 9Router:", { finalHTML });
+    }
+
+    if (!finalHTML && config.openRouterEnabled !== false && config.openRouterApiKey) {
+      updateStatus(tabId, "4/4: 9Router gagal. Mencoba OpenRouter...");
+      finalHTML = await processWithOpenRouter(info, rawLyrics, tabId);
+      debugLog("[Alur Lirik] Hasil OpenRouter:", { finalHTML });
     }
 
     if (!finalHTML && rawLyrics) {
@@ -461,6 +476,49 @@ async function processWith9Router(info, rawLyrics, tabId) {
   } catch (error) {
     debugError("[9Router] Error:", error);
     updateStatus(tabId, `Error 9Router: ${error.message}`);
+    return null;
+  }
+}
+
+async function requestOpenRouter(prompt, cfg) {
+  const config = cfg || await getAIConfig();
+  if (!config.openRouterApiKey || !config.openRouterModel) return "";
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${config.openRouterApiKey}`,
+      "HTTP-Referer": "ext",
+      "X-Title": "YouTube Lyrics Extension"
+    },
+    body: JSON.stringify({
+      model: config.openRouterModel,
+      messages: [{ role: "user", content: prompt }],
+      stream: false
+    })
+  });
+  debugLog("requestOpenRouter");
+  debugLog(response);
+  if (!response.ok) throw new Error(`OpenRouter HTTP ${response.status}`);
+  return (await response.json()).choices?.[0]?.message?.content || "";
+}
+
+async function processWithOpenRouter(info, rawLyrics, tabId) {
+  const { language } = await getTranslateConfig();
+  const targetLang = translateLangName(language);
+  const promptText = rawLyrics
+    ? `Rapikan HTML lirik berikut tanpa menambah atau menghapus lirik. Gunakan hanya class lyric-ori, lyric-romaji, lyric-id. Isi lyric-id adalah terjemahan ke bahasa ${targetLang}. Output HTML saja.\n${rawLyrics}`
+    : `Cari lirik lagu "${info.songTitle}" oleh "${info.artist}". Jika tidak tahu, jawab LIRIK_TIDAK_DITEMUKAN. Format HTML hanya dengan class lyric-ori, lyric-romaji, lyric-id (lyric-id = terjemahan ke bahasa ${targetLang}). Output HTML saja.`;
+
+  try {
+    const config = await getAIConfig();
+    if (!config.openRouterApiKey || !config.openRouterModel) return null;
+    const text = await requestOpenRouter(promptText, config);
+    if (!text || text.includes("LIRIK_TIDAK_DITEMUKAN")) return null;
+    return text.replace(/```html/g, "").replace(/```/g, "").trim();
+  } catch (error) {
+    debugError("[OpenRouter] Error:", error);
+    updateStatus(tabId, `Error OpenRouter: ${error.message}`);
     return null;
   }
 }
