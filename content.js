@@ -535,7 +535,7 @@ function loadLyrics(info, forceFetch = false) {
                 return;
             }
             if (response?.success && response.lyrics && parseLRC(response.lyrics).length) {
-              displayLyrics({
+              const payload = {
                 type: 'synced',
                 data: response.lyrics,
                 originalData: response.originalLyrics || response.lyrics,
@@ -544,7 +544,11 @@ function loadLyrics(info, forceFetch = false) {
                 translateLang: response.translateLang || null,
                 lrclibId: response.lrclibId || null,
                 lrclibUrl: response.lrclibUrl || ''
-              }, false);
+              };
+              displayLyrics(payload, false);
+              if (response.aiProcessed) {
+                chrome.storage.local.set({ [info.fullName]: withCurrentVideoMetadata(payload) });
+              }
                 isLoading = false;
                 updateActionButtons();
                 return;
@@ -603,7 +607,11 @@ function loadLyricsByUrl(url) {
       updateActionButtons();
       return;
     }
-    displayLyrics({ type: 'synced', data: response.lyrics, originalData: response.originalLyrics || response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null, lrclibUrl: response.lrclibUrl || url }, false);
+    const payload = { type: 'synced', data: response.lyrics, originalData: response.originalLyrics || response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null, lrclibUrl: response.lrclibUrl || url };
+    displayLyrics(payload, false);
+    if (response.aiProcessed) {
+      chrome.storage.local.set({ [currentSongInfo.fullName]: withCurrentVideoMetadata(payload) });
+    }
   });
 }
 

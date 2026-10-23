@@ -1,5 +1,5 @@
 // background.js
-const DEBUG = false;
+const DEBUG = true;
 const debugLog = (...args) => { if (DEBUG) console.log(...args); };
 const debugError = (...args) => { if (DEBUG) console.error(...args); };
 
@@ -8,7 +8,9 @@ const DEFAULT_AI_CONFIG = {
   geminiApiKey: "",
   nineRouterUrl: "",
   nineRouterApiKey: "",
-  nineRouterModel: ""
+  nineRouterModel: "",
+  openRouterApiKey: "",
+  openRouterModel: ""
 };
 
 function getAIConfig() {
@@ -235,15 +237,21 @@ async function transliterateSyncedLyrics(lrc, info, tabId) {
 // dan ikut disimpan ke storage bersama liriknya.
 async function prepareSyncedLyrics(lyrics, info, tabId) {
   let prepared = lyrics;
-  if ([...prepared].some((char) => /[^\x00-\x7F\s\d\p{P}]/u.test(char))) {
+  const needsTransliteration = [...prepared].some((char) => /[^\x00-\x7F\s\d\p{P}]/u.test(char));
+  
+  if (needsTransliteration) {
     updateStatus(tabId, "Lirik non-Latin ditemukan. Mengubah ke romaji...");
     prepared = await transliterateSyncedLyrics(prepared, info, tabId);
-    debugLog("result transliterateSyncedLyrics");
   }
 
   const { language } = await getTranslateConfig();
   const translations = await translateSyncedLyrics(prepared, info, tabId, language);
-  return { originalLyrics: lyrics, lyrics: prepared, translations, translateLang: language };
+  
+  // Auto-save condition: Translation must succeed, and if transliteration was needed, it must have changed the text.
+  const transliterationSuccess = !needsTransliteration || (prepared !== lyrics);
+  const aiProcessed = (translations !== null) && transliterationSuccess;
+
+  return { originalLyrics: lyrics, lyrics: prepared, translations, translateLang: language, aiProcessed };
 }
 
 // Terjemahkan lirik sinkron per baris ke bahasa pilihan.
