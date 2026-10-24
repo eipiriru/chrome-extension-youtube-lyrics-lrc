@@ -19,6 +19,11 @@ const nineRouterModelEl = document.getElementById('cfg-9router-model');
 const openRouterEnabledEl = document.getElementById('cfg-openrouter-enabled');
 const openRouterKeyEl = document.getElementById('cfg-openrouter-key');
 const openRouterModelEl = document.getElementById('cfg-openrouter-model');
+const videoInfoProviderEl = document.getElementById('cfg-video-info-provider');
+const videoApiKeyEl = document.getElementById('cfg-video-api-key');
+const videoProxyUrlEl = document.getElementById('cfg-video-proxy-url');
+const saveVideoInfoConfigBtn = document.getElementById('cfg-video-info-save');
+const resetVideoInfoConfigBtn = document.getElementById('cfg-video-info-reset');
 const saveConfigBtn = document.getElementById('cfg-save');
 const resetConfigBtn = document.getElementById('cfg-reset');
 const uiBgColorEl = document.getElementById('cfg-ui-bg-color');
@@ -81,11 +86,12 @@ function normalizedKey(value) {
 
 function lyricRecord(key, payload) {
   const separator = key.indexOf(' - ');
-  const artistName = separator < 0 ? '' : key.slice(0, separator).trim();
-  const trackName = separator < 0 ? key.trim() : key.slice(separator + 3).trim();
+  const artistName = payload?.artistName || (separator < 0 ? '' : key.slice(0, separator).trim());
+  const trackName = payload?.trackName || (separator < 0 ? key.trim() : key.slice(separator + 3).trim());
   const syncedLyrics = payload?.originalData || payload?.data || '';
   return {
     key: normalizedKey(`${artistName} ${trackName}`),
+    videoId: /^[\w-]{11}$/.test(key) ? key : null,
     trackName,
     artistName,
     lrclibId: Number.isInteger(payload?.lrclibId) ? payload.lrclibId : null,
@@ -105,7 +111,7 @@ function lyricRecord(key, payload) {
 }
 
 function parseLyricsPack(pack) {
-  if (!pack || pack.schemaVersion !== 1 || !Array.isArray(pack.lyrics) || pack.lyrics.length > 10000) {
+  if (!pack || ![1, 2].includes(pack.schemaVersion) || !Array.isArray(pack.lyrics) || pack.lyrics.length > 10000) {
     throw new Error('Format pack tidak valid atau schemaVersion tidak didukung.');
   }
   return pack.lyrics.map((item) => {
@@ -113,7 +119,9 @@ function parseLyricsPack(pack) {
         !['synced', 'plain'].includes(item.type) || typeof item.syncedLyrics !== 'string' || !item.syncedLyrics.trim()) {
       throw new Error('Pack berisi data lagu yang tidak valid.');
     }
-    const key = `${item.artistName.trim()} - ${item.trackName.trim()}`;
+    const legacyKey = `${item.artistName.trim()} - ${item.trackName.trim()}`;
+    const videoId = typeof item.videoId === 'string' && /^[\w-]{11}$/.test(item.videoId) ? item.videoId : null;
+    const key = videoId || legacyKey;
     const translations = item.translations && typeof item.translations === 'object' && !Array.isArray(item.translations)
       ? item.translations : {};
     const language = ['id', 'en'].includes(item.translateLang) ? item.translateLang
@@ -128,6 +136,8 @@ function parseLyricsPack(pack) {
     const payload = {
       type: item.type,
       data: item.type === 'synced' ? (item.romajiLyrics || item.syncedLyrics) : item.syncedLyrics,
+      artistName: item.artistName.trim(),
+      trackName: item.trackName.trim(),
       lrclibId: Number.isInteger(item.lrclibId) ? item.lrclibId : null,
       lrclibUrl: typeof item.lrclibUrl === 'string' && /^https:\/\/lrclib\.net\/tracks\/\d+\/?$/.test(item.lrclibUrl) ? item.lrclibUrl : '',
       ...(typeof item.showOriginal === 'boolean' ? { showOriginal: item.showOriginal } : {}),
@@ -136,6 +146,7 @@ function parseLyricsPack(pack) {
     };
     return {
       key,
+      legacyKey,
       payload: item.type === 'synced'
         ? { ...payload, originalData: item.syncedLyrics, offset: Number.isFinite(item.offset) ? item.offset : 0, translations: translatedLines, translateLang: translatedLines ? language : null }
         : payload
@@ -147,12 +158,14 @@ async function mergeLyricsPack(pack) {
   const imported = parseLyricsPack(pack);
   const existing = await chrome.storage.local.get(null);
   const additions = {};
-  const existingKeys = new Set(Object.keys(existing).map(normalizedKey));
-  imported.forEach(({ key, payload }) => {
-    const matchKey = normalizedKey(key);
-    if (!existingKeys.has(matchKey)) {
+  const existingKeys = new Set(Object.keys(existing));
+  const existingNames = new Set(Object.keys(existing).map(normalizedKey));
+  imported.forEach(({ key, legacyKey, payload }) => {
+    const matchName = normalizedKey(legacyKey);
+    if (!existingKeys.has(key) && (key !== legacyKey || !existingNames.has(matchName))) {
       additions[key] = payload;
-      existingKeys.add(matchKey);
+      existingKeys.add(key);
+      existingNames.add(matchName);
     }
   });
   const keys = Object.keys(additions);
@@ -168,7 +181,7 @@ function exportLyricsPack(items = savedItems) {
   }
   try {
     const pack = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
       lyrics: targetItems.map(({ key, payload }) => lyricRecord(key, payload))
     };
@@ -192,7 +205,7 @@ exportSelectedBtn.onclick = () => exportLyricsPack(savedItems.filter(({ key }) =
 deleteSelectedBtn.onclick = deleteSelectedLyrics;
 selectAllEl.onchange = () => {
   const query = searchEl.value.trim().toLowerCase();
-  const visible = query ? savedItems.filter(({ key }) => key.toLowerCase().includes(query)) : savedItems;
+  const visible = query ? savedItems.filter(({ key, payload }) => `${payload?.artistName || ''} ${payload?.trackName || ''} ${key}`.toLowerCase().includes(query)) : savedItems;
   visible.forEach(({ key }) => selectAllEl.checked ? selectedKeys.add(key) : selectedKeys.delete(key));
   render();
 };
@@ -239,7 +252,7 @@ function showStatus(message) {
 function render() {
   const query = searchEl.value.trim().toLowerCase();
   const items = query
-    ? savedItems.filter((item) => item.key.toLowerCase().includes(query))
+    ? savedItems.filter((item) => `${item.payload?.artistName || ''} ${item.payload?.trackName || ''} ${item.key}`.toLowerCase().includes(query))
     : savedItems;
 
   listEl.innerHTML = '';
@@ -287,8 +300,10 @@ function render() {
 
     const title = document.createElement('div');
     title.className = 'item-title';
-    title.textContent = key;
-    title.title = key;
+    const displayName = payload?.artistName && payload?.trackName
+      ? `${payload.artistName} - ${payload.trackName}` : key;
+    title.textContent = displayName;
+    title.title = displayName;
 
     const meta = document.createElement('div');
     meta.className = 'item-meta';
@@ -373,7 +388,7 @@ function loadItems() {
 }
 
 function loadConfig() {
-  chrome.storage.local.get(['aiConfig', 'uiConfig', 'translateConfig'], ({ aiConfig = {}, uiConfig = {}, translateConfig = {} }) => {
+  chrome.storage.local.get(['aiConfig', 'uiConfig', 'translateConfig', 'videoInfoConfig'], ({ aiConfig = {}, uiConfig = {}, translateConfig = {}, videoInfoConfig = {} }) => {
     geminiEnabledEl.checked = aiConfig.geminiEnabled !== false;
     geminiKeyEl.value = aiConfig.geminiApiKey || '';
     nineRouterEnabledEl.checked = aiConfig.nineRouterEnabled !== false;
@@ -385,8 +400,41 @@ function loadConfig() {
     openRouterModelEl.value = aiConfig.openRouterModel || '';
     loadUiConfig(uiConfig);
     loadTranslateConfig(translateConfig);
+    loadVideoInfoConfig(videoInfoConfig);
   });
 }
+
+function loadVideoInfoConfig(config = {}) {
+  videoInfoProviderEl.value = ['dom', 'youtubeApi', 'proxy'].includes(config.provider) ? config.provider : 'dom';
+  videoApiKeyEl.value = config.apiKey || '';
+  videoProxyUrlEl.value = config.proxyUrl || '';
+  document.getElementById('video-api-key-field').hidden = videoInfoProviderEl.value !== 'youtubeApi';
+  document.getElementById('video-proxy-field').hidden = videoInfoProviderEl.value !== 'proxy';
+}
+
+videoInfoProviderEl.onchange = () => loadVideoInfoConfig({ provider: videoInfoProviderEl.value, apiKey: videoApiKeyEl.value, proxyUrl: videoProxyUrlEl.value });
+saveVideoInfoConfigBtn.onclick = async () => {
+  const config = { provider: videoInfoProviderEl.value, apiKey: videoApiKeyEl.value.trim(), proxyUrl: videoProxyUrlEl.value.trim() };
+  if (!['dom', 'youtubeApi', 'proxy'].includes(config.provider)) return showStatus('Sumber info video tidak valid.');
+  if (config.provider === 'youtubeApi' && !config.apiKey) return showStatus('API key YouTube wajib untuk mode ini.');
+  if (config.provider === 'proxy') {
+    try {
+      const url = new URL(config.proxyUrl);
+      if (url.protocol !== 'https:') throw new Error();
+      if (!await chrome.permissions.contains({ origins: [`${url.origin}/*`] })) {
+        const granted = await chrome.permissions.request({ origins: [`${url.origin}/*`] });
+        if (!granted) return showStatus('Izin host proxy diperlukan.');
+      }
+    } catch {
+      return showStatus('Proxy harus berupa URL HTTPS yang valid.');
+    }
+  }
+  chrome.storage.local.set({ videoInfoConfig: config }, () => showStatus('Sumber info video disimpan.'));
+};
+resetVideoInfoConfigBtn.onclick = () => chrome.storage.local.remove('videoInfoConfig', () => {
+  loadVideoInfoConfig();
+  showStatus('Sumber info video direset ke DOM YouTube.');
+});
 
 function loadUiConfig(config = {}) {
   const ui = { ...DEFAULT_UI_CONFIG, ...config };
@@ -555,7 +603,7 @@ document.querySelectorAll('.section h2[data-target]').forEach((heading) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   loadItems();
-  if (changes.aiConfig || changes.uiConfig || changes.translateConfig) loadConfig();
+  if (changes.aiConfig || changes.uiConfig || changes.translateConfig || changes.videoInfoConfig) loadConfig();
 });
 
 loadConfig();

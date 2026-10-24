@@ -288,6 +288,33 @@
     </div>
   </div>
   <div class="section">
+    <h2 data-target="video-info-body">🎬 Info Video YouTube <span class="chevron">▼</span></h2>
+    <div class="section-body" id="video-info-body">
+      <div class="field">
+        <label for="cfg-video-info-provider">Sumber info video</label>
+        <select id="cfg-video-info-provider">
+          <option value="dom">DOM YouTube</option>
+          <option value="youtubeApi">YouTube Data API</option>
+          <option value="proxy">Proxy</option>
+        </select>
+      </div>
+      <div class="field" id="video-api-key-field">
+        <label for="cfg-video-api-key">YouTube Data API key (development)</label>
+        <input id="cfg-video-api-key" type="password" autocomplete="off" placeholder="AIza...">
+      </div>
+      <div class="field" id="video-proxy-field">
+        <label for="cfg-video-proxy-url">Proxy URL</label>
+        <input id="cfg-video-proxy-url" type="url" placeholder="https://example.com/youtube-video-info">
+      </div>
+      <p class="hint">Key API di extension dapat diekstrak. Batasi key untuk YouTube Data API v3; gunakan proxy untuk rilis.</p>
+      <div class="cfg-actions">
+        <button id="cfg-video-info-save" class="btn-primary">Simpan Sumber Video</button>
+        <button id="cfg-video-info-reset">Reset</button>
+      </div>
+      <div data-status role="status" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="section">
     <h2 data-target="translate-body">🌐 Terjemahan Lirik <span class="chevron">▼</span></h2>
     <div class="section-body" id="translate-body">
       <div class="field">

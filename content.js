@@ -255,7 +255,7 @@ function updateActionButtons() {
     return element;
   };
 
-  if (currentSongInfo?.fullName && !isLoading) {
+  if (currentSongInfo?.videoId && !isLoading) {
     actionsEl.appendChild(button('Refresh', '', 'Ambil ulang lirik', () => {
       chrome.runtime.sendMessage({ action: 'getActiveVideoInfo' }, (activeInfo) => {
         if (chrome.runtime.lastError || !activeInfo?.songTitle) {
@@ -277,7 +277,7 @@ function updateActionButtons() {
     }));
   }
 
-  if (!currentSongInfo?.fullName || !currentLyricsPayload || isLoading) return;
+  if (!currentSongInfo?.videoId || !currentLyricsPayload || isLoading) return;
 
   if (currentLyricsPayload.type === 'synced') {
     actionsEl.appendChild(button(
@@ -296,12 +296,12 @@ function updateActionButtons() {
 
   if (isFromCache) {
     actionsEl.appendChild(button('Hapus', 'yt-lyric-btn-danger', 'Hapus lirik tersimpan', () => {
-      deleteLyrics(currentSongInfo.fullName);
+      deleteLyrics(currentSongInfo.videoId);
     }));
   } else {
     actionsEl.appendChild(button('Simpan', 'yt-lyric-btn-primary', 'Simpan lirik ke local storage', () => {
       const payload = withCurrentVideoMetadata(currentLyricsPayload);
-      chrome.storage.local.set({ [currentSongInfo.fullName]: payload }, () => {
+      chrome.storage.local.set({ [currentSongInfo.videoId]: withSongMetadata(payload, currentSongInfo) }, () => {
         currentLyricsPayload = payload;
         isFromCache = true;
         updateActionButtons();
@@ -331,8 +331,12 @@ function updateOffsetInfo() {
 }
 
 function persistCurrentLyrics() {
-  if (!isFromCache || !currentSongInfo || !currentLyricsPayload) return;
-  chrome.storage.local.set({ [currentSongInfo.fullName]: currentLyricsPayload });
+  if (!isFromCache || !currentSongInfo?.videoId || !currentLyricsPayload) return;
+  chrome.storage.local.set({ [currentSongInfo.videoId]: withSongMetadata(currentLyricsPayload, currentSongInfo) });
+}
+
+function withSongMetadata(payload, info) {
+  return { ...payload, artistName: info.artist || '', trackName: info.songTitle || '' };
 }
 
 function withCurrentVideoMetadata(payload) {
@@ -509,6 +513,11 @@ function displayLyrics(payload, fromCache) {
 }
 
 function loadLyrics(info, forceFetch = false) {
+  if (!info?.videoId || !/^[\w-]{11}$/.test(info.videoId)) {
+    titleEl.textContent = 'Gagal mendapatkan ID video';
+    bodyEl.textContent = 'ID video YouTube tidak valid.';
+    return;
+  }
   const loadToken = ++currentLoadToken;
   const isCurrentLoad = () => !isStopped && loadToken === currentLoadToken;
     currentSongInfo = info;
@@ -517,7 +526,7 @@ function loadLyrics(info, forceFetch = false) {
   isStopped = false;
     parsedLyrics = [];
     activeLyricIndex = -1;
-    titleEl.textContent = `Lagu: ${info.fullName}`;
+    titleEl.textContent = `Lagu: ${info.fullName || `${info.artist} - ${info.songTitle}`}`;
     offsetEl.textContent = '';
     lyricsUrlInput.value = '';
     isLoading = true;
@@ -547,7 +556,7 @@ function loadLyrics(info, forceFetch = false) {
               };
               displayLyrics(payload, false);
               if (response.aiProcessed) {
-                chrome.storage.local.set({ [info.fullName]: withCurrentVideoMetadata(payload) });
+                chrome.storage.local.set({ [info.videoId]: withSongMetadata(withCurrentVideoMetadata(payload), info) });
               }
                 isLoading = false;
                 updateActionButtons();
@@ -576,13 +585,19 @@ function loadLyrics(info, forceFetch = false) {
         return;
     }
 
-    chrome.storage.local.get(info.fullName, (result) => {
+    chrome.storage.local.get([info.videoId, info.fullName], (result) => {
     if (!isCurrentLoad()) return;
-        if (result[info.fullName]) {
+        const legacyPayload = result[info.videoId] ? null : result[info.fullName];
+        const storedPayload = result[info.videoId] || legacyPayload;
+        if (storedPayload) {
         isLoading = false;
-            const cachedPayload = withCurrentVideoMetadata(result[info.fullName]);
-            if (cachedPayload !== result[info.fullName]) {
-              chrome.storage.local.set({ [info.fullName]: cachedPayload });
+            const cachedPayload = withSongMetadata(withCurrentVideoMetadata(storedPayload), info);
+            if (legacyPayload || cachedPayload !== storedPayload) {
+              chrome.storage.local.set({ [info.videoId]: cachedPayload }, () => {
+                if (!chrome.runtime.lastError && legacyPayload) {
+                  chrome.storage.local.remove(info.fullName);
+                }
+              });
             }
             displayLyrics(cachedPayload, true);
             return;
@@ -610,7 +625,7 @@ function loadLyricsByUrl(url) {
     const payload = { type: 'synced', data: response.lyrics, originalData: response.originalLyrics || response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null, lrclibUrl: response.lrclibUrl || url };
     displayLyrics(payload, false);
     if (response.aiProcessed) {
-      chrome.storage.local.set({ [currentSongInfo.fullName]: withCurrentVideoMetadata(payload) });
+      chrome.storage.local.set({ [currentSongInfo.videoId]: withSongMetadata(withCurrentVideoMetadata(payload), currentSongInfo) });
     }
   });
 }
@@ -655,7 +670,8 @@ const isYTPage = location.hostname.includes('youtube.com');
 
 function getYouTubeVideoId() {
   if (!isYTPage) return null;
-  return new URLSearchParams(location.search).get('v') || null;
+  const videoId = new URLSearchParams(location.search).get('v');
+  return videoId && /^[\w-]{11}$/.test(videoId) ? videoId : null;
 }
 
 function checkYouTubeVideoChange() {
@@ -670,10 +686,13 @@ function checkYouTubeVideoChange() {
 
   if (currentId !== lastYouTubeVideoId) {
     lastYouTubeVideoId = currentId;
-    const info = getYouTubeInfo();
-    if (info?.songTitle) {
-      loadLyrics(info);
-    }
+    chrome.runtime.sendMessage({ action: 'getVideoInfo', videoId: currentId }, (response) => {
+      if (!chrome.runtime.lastError && response?.success && response.info) loadLyrics(response.info);
+      else {
+        titleEl.textContent = 'Gagal mendapatkan info video';
+        bodyEl.textContent = response?.error || 'Periksa konfigurasi sumber info video.';
+      }
+    });
   }
 }
 
@@ -710,7 +729,7 @@ setInterval(() => {
     if (chrome.runtime.lastError || !response?.songTitle) return;
     const videoChanged = response.videoId && response.videoId !== lastSourceVideoId;
 
-    if (!currentSongInfo || videoChanged || response.fullName !== currentSongInfo.fullName) {
+    if (!currentSongInfo || videoChanged || response.videoId !== currentSongInfo.videoId) {
       lastSourceVideoId = response.videoId || null;
       loadLyrics(response);
     }
@@ -719,33 +738,13 @@ setInterval(() => {
 
 // 2. Fungsi Ekstrak Judul
 function getYouTubeInfo() {
-    // Ambil teks judul mentah
     const titleElement = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, h1.title yt-formatted-string');
-    let rawTitle = titleElement ? titleElement.textContent.trim() : document.title.replace(' - YouTube', '').replace(/^\(\d+\)\s/, '').trim();
-    
-    // Ambil nama channel YouTube (biasanya nama artisnya)
+    const rawTitle = titleElement ? titleElement.textContent.trim() : document.title.trim();
     const channelElement = document.querySelector('ytd-video-owner-renderer yt-formatted-string a, ytd-channel-name yt-formatted-string a');
-    let channelName = channelElement ? channelElement.textContent.trim() : "";
-    // YouTube Music sering menambahkan " - Topic" di belakang nama channel artis
-    channelName = channelName.replace(/ - Topic$/i, '').trim();
-  
-    // Bersihkan embel-embel dari judul
-    let cleanTitle = rawTitle.replace(/\[.*?\]|\(.*?\)|(official|video|audio|lyrics|music|mv)/gi, '').trim();
-    
-    let artist = channelName;
-    let title = cleanTitle;
-  
-    // Jika format judul sudah "Artis - Judul", kita pisahkan
-    if (cleanTitle.includes('-')) {
-      let parts = cleanTitle.split('-');
-      artist = parts[0].trim();
-      title = parts.slice(1).join('-').trim(); // Jika ada '-' lagi di judul lagu
-    }
-  
-    return { 
-      artist: artist, 
-      songTitle: title, 
-      fullName: `${artist} - ${title}` // Contoh: "Yorushika - Nautilus"
+    return {
+      videoId: getYouTubeVideoId(),
+      rawTitle,
+      channelTitle: channelElement ? channelElement.textContent.trim() : ''
     };
   }
 

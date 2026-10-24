@@ -16,6 +16,87 @@ const DEFAULT_AI_CONFIG = {
   openRouterModel: ""
 };
 
+const DEFAULT_VIDEO_INFO_CONFIG = {
+  provider: "dom",
+  apiKey: "",
+  proxyUrl: ""
+};
+
+function isYouTubeVideoId(value) {
+  return typeof value === "string" && /^[\w-]{11}$/.test(value);
+}
+
+function getVideoInfoConfig() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get("videoInfoConfig", ({ videoInfoConfig }) => {
+      resolve({ ...DEFAULT_VIDEO_INFO_CONFIG, ...(videoInfoConfig || {}) });
+    });
+  });
+}
+
+function normalizeVideoInfo(videoId, rawTitle, channelTitle) {
+  const title = String(rawTitle || "").trim();
+  const channelName = String(channelTitle || "").replace(/ - Topic$/i, "").trim();
+  if (!title) return null;
+  const queryTitle = title.replace(/\[.*?\]|\(.*?\)|\b(official|video|audio|lyrics|music|mv)\b/gi, " ").replace(/\s+/g, " ").trim();
+  const parts = queryTitle.split(/\s+-\s+/);
+  const artist = (parts.length > 1 ? parts[0] : channelName).trim();
+  const songTitle = (parts.length > 1 ? parts.slice(1).join(" - ") : queryTitle).trim();
+  if (!songTitle) return null;
+  return { videoId, rawTitle: title, artist, songTitle, fullName: `${artist} - ${songTitle}` };
+}
+
+function getDomVideoInfo(tabId, videoId) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, { action: "getRawTitle" }, (info) => {
+      if (chrome.runtime.lastError || !info?.rawTitle) {
+        reject(new Error(chrome.runtime.lastError?.message || "Info video dari halaman YouTube tidak tersedia."));
+        return;
+      }
+      const normalized = normalizeVideoInfo(videoId, info.rawTitle, info.channelTitle);
+      if (!normalized) {
+        reject(new Error("Info video dari halaman YouTube tidak valid."));
+        return;
+      }
+      resolve(normalized);
+    });
+  });
+}
+
+async function getVideoInfo(videoId, tabId) {
+  if (!isYouTubeVideoId(videoId)) throw new Error("ID video YouTube tidak valid.");
+  const config = await getVideoInfoConfig();
+  if (config.provider === "dom") return getDomVideoInfo(tabId, videoId);
+
+  let title;
+  let channelTitle;
+  if (config.provider === "youtubeApi") {
+    if (!config.apiKey) throw new Error("API key YouTube belum diatur.");
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.search = new URLSearchParams({ part: "snippet", id: videoId, key: config.apiKey });
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`YouTube Data API HTTP ${response.status}`);
+    const item = (await response.json()).items?.[0];
+    title = item?.snippet?.title;
+    channelTitle = item?.snippet?.channelTitle;
+  } else if (config.provider === "proxy") {
+    if (!config.proxyUrl) throw new Error("URL proxy belum diatur.");
+    const url = new URL(config.proxyUrl);
+    if (url.protocol !== "https:") throw new Error("Proxy harus memakai HTTPS.");
+    url.searchParams.set("videoId", videoId);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Proxy info video HTTP ${response.status}`);
+    const data = await response.json();
+    title = data?.title;
+    channelTitle = data?.channelTitle;
+  } else {
+    throw new Error("Sumber info video tidak valid.");
+  }
+  const info = normalizeVideoInfo(videoId, title, channelTitle);
+  if (!info) throw new Error("Respons info video tidak memuat judul valid.");
+  return info;
+}
+
 function getAIConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get("aiConfig", ({ aiConfig }) => {
@@ -54,15 +135,11 @@ chrome.action.onClicked.addListener(async (currentTab) => {
       sendMessageSafely(currentTab.id, { action: "toggleWidget", info: null });
       return;
     }
-
-    const ytTab = ytTabs[0];
-    chrome.tabs.sendMessage(ytTab.id, { action: "getRawTitle" }, (response) => {
-      if (chrome.runtime.lastError || !response) {
-        sendMessageSafely(currentTab.id, { action: "toggleWidget", info: null });
-        return;
-      }
-      sendMessageSafely(currentTab.id, { action: "toggleWidget", info: response });
-    });
+    const ytTab = selectYouTubeTab(ytTabs);
+    const videoId = new URL(ytTab.url).searchParams.get("v");
+    getVideoInfo(videoId, ytTab.id)
+      .then((info) => sendMessageSafely(currentTab.id, { action: "toggleWidget", info }))
+      .catch(() => sendMessageSafely(currentTab.id, { action: "toggleWidget", info: null }));
   });
 });
 
@@ -102,11 +179,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(null);
         return;
       }
-      chrome.tabs.sendMessage(ytTab.id, { action: "getRawTitle" }, (response) => {
-        const videoId = new URL(ytTab.url).searchParams.get("v");
-        sendResponse(chrome.runtime.lastError || !response?.songTitle ? null : { ...response, videoId });
-      });
+      getVideoInfo(new URL(ytTab.url).searchParams.get("v"), ytTab.id)
+        .then(sendResponse)
+        .catch(() => sendResponse(null));
     });
+    return true;
+  }
+  if (request.action === "getVideoInfo") {
+    getVideoInfo(request.videoId, sender.tab?.id)
+      .then((info) => sendResponse({ success: true, info }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   if (request.action === "fetchLyricsPack") {

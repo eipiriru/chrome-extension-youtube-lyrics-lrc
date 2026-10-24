@@ -19,11 +19,15 @@
       "https://www.youtube.com/*",
       "https://*.kazelyrics.com/*",
       "https://generativelanguage.googleapis.com/*",
+      "https://www.googleapis.com/*",
       "http://localhost:20128/*",
       "http://127.0.0.1:20128/*",
       "https://lrclib.net/*",
       "https://github.com/*",
       "https://*.githubusercontent.com/*"
+    ],
+    "optional_host_permissions": [
+      "https://*/*"
     ],
     "background": {
       "service_worker": "background.js"
