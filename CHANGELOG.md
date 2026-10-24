@@ -2,6 +2,18 @@
 
 Format mengikuti prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versi rilis sumber utama ada di `manifest.json`.
 
+## [2.5.3] - 2026-10-24
+
+### Added
+- Key penyimpanan lirik berdasarkan ID video YouTube, dengan migrasi cache lama berbasis artis dan judul.
+- Pilihan sumber info video: DOM YouTube (default), YouTube Data API, atau proxy.
+- Opsi konfigurasi YouTube Data API key untuk pengambilan metadata video.
+
+### Changed
+- Pertahankan judul video raw untuk metadata dan tampilan; bersihkan query secara terpisah untuk pencarian lirik.
+- Perbarui ekspor/impor pack agar mendukung ID video dan tetap kompatibel dengan schema lama.
+- Tingkatkan UI/UX konfigurasi dan informasi penggunaan.
+
 ## [2.5.2] - 2026-10-22
 
 ### Added

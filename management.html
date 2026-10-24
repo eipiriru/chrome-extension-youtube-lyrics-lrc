@@ -35,6 +35,7 @@
       font-size: 13px;
     }
     .search-row input:focus { outline: none; border-color: #81c995; }
+    #group-toggle { white-space: nowrap; }
     .actions-row {
       display: flex;
       align-items: center;
@@ -72,6 +73,8 @@
     .btn-danger { color: #ff6b6b; border-color: #662222; }
     .btn-danger:hover { background: #3a2020; }
     .btn-primary { color: #81c995; border-color: #2a5033; }
+    .icon-btn { width:30px; height:28px; padding:4px; display:inline-flex; align-items:center; justify-content:center; }
+    .icon-btn svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
     #list { background: #222; border-radius: 6px; overflow: hidden; }
     .item {
       display: grid;
@@ -98,6 +101,8 @@
     .item-actions { display: flex; gap: 6px; }
     .item-lrc-url { display: inline-block; max-width: 180px; margin-top: 4px; overflow: hidden; padding: 2px 6px; border: 1px solid #35563e; border-radius: 4px; background: #202a23; color: #81c995; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
     .item-lrc-url:hover { background: #2a3b30; text-decoration: underline; }
+    .artist-group { border-bottom: 1px solid #383838; }
+    .artist-group summary { padding: 8px 12px; background: #2a2a2a; color: #81c995; font-size: 12px; font-weight: 600; cursor: pointer; }
     .empty { padding: 24px; text-align: center; color: #666; }
     [data-status] { color: #fbbc04; font-size: 12px; min-height: 16px; margin-top: 10px; }
     .section { background: #222; border-radius: 6px; padding: 12px; margin-bottom: 14px; }
@@ -176,6 +181,7 @@
   <section id="panel-lyrics" role="tabpanel" aria-labelledby="tab-lyrics">
     <div class="search-row">
       <input id="search" type="text" placeholder="Cari judul lagu..." aria-label="Cari judul lagu">
+      <button id="group-toggle" type="button" aria-pressed="true">Ungroup</button>
       <span id="count"></span>
     </div>
     <div class="actions-row">
@@ -220,6 +226,16 @@
         <div class="hint">0 = tanpa blur. Batas aman: 0–20px.</div>
       </div>
       <div class="field">
+        <label for="cfg-ui-lyric-fade">Fade tepi lirik (%)</label>
+        <input id="cfg-ui-lyric-fade" type="number" min="0" max="30" step="1" value="12">
+        <div class="hint">0 = nonaktif. Persentase tinggi kontainer lirik (0–30%).</div>
+      </div>
+      <div class="field">
+        <label for="cfg-ui-verse-spacing">Jarak antarbaris lirik (px)</label>
+        <input id="cfg-ui-verse-spacing" type="number" min="0" max="48" step="1" value="24">
+        <div class="hint">Jarak vertikal antarbaris bertimestamp.</div>
+      </div>
+      <div class="field">
         <label>Tipografi karaoke</label>
         <div class="hint">Atur ukuran (px), gaya teks, dan warna.</div>
         <div class="text-style-list">
@@ -236,7 +252,7 @@
       </div>
     </div>
   </div>
-  <div class="section">
+  <div class="section collapsed">
     <h2 data-target="config-body">⚙️ Konfigurasi AI <span class="chevron">▼</span></h2>
     <div class="section-body" id="config-body">
       <div class="field">
@@ -287,7 +303,7 @@
       </div>
     </div>
   </div>
-  <div class="section">
+  <div class="section collapsed">
     <h2 data-target="video-info-body">🎬 Info Video YouTube <span class="chevron">▼</span></h2>
     <div class="section-body" id="video-info-body">
       <div class="field">
@@ -306,15 +322,13 @@
         <label for="cfg-video-proxy-url">Proxy URL</label>
         <input id="cfg-video-proxy-url" type="url" placeholder="https://example.com/youtube-video-info">
       </div>
-      <p class="hint">Key API di extension dapat diekstrak. Batasi key untuk YouTube Data API v3; gunakan proxy untuk rilis.</p>
       <div class="cfg-actions">
         <button id="cfg-video-info-save" class="btn-primary">Simpan Sumber Video</button>
         <button id="cfg-video-info-reset">Reset</button>
       </div>
-      <div data-status role="status" aria-live="polite"></div>
     </div>
   </div>
-  <div class="section">
+  <div class="section collapsed">
     <h2 data-target="translate-body">🌐 Terjemahan Lirik <span class="chevron">▼</span></h2>
     <div class="section-body" id="translate-body">
       <div class="field">
@@ -344,7 +358,7 @@
     </div>
   </div>
   </div>
-  <div id="config-status" data-status role="status" aria-live="polite"></div>
+  <div data-status role="status" aria-live="polite"></div>
   </section>
   <section id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
   <div class="section">
@@ -359,7 +373,10 @@
         <li>Tombol <strong>−0.1s / +0.1s</strong> menyesuaikan offset waktu; <strong>Reset</strong> mengembalikan ke 0. Offset tersimpan permanen.</li>
         <li>Tombol <strong>🔗</strong> memuat lirik dari URL LRCLIB (bentuk: <code>https://lrclib.net/tracks/ID</code>), berguna jika judul video berbeda dari judul lagu.</li>
         <li>Sinkron antar-tab: hanya satu tab yang bersuara yang menjadi sumber waktu — lirik di tab lain mengikuti.</li>
-        <li>Lirik hasil proses disimpan otomatis ke penyimpanan lokal dan dimuat ulang tanpa internet di putaran berikutnya.</li>
+        <li>Penyimpanan cache: lirik disimpan berdasarkan <code>videoId</code> YouTube. Jika ada video berbeda dengan lagu yang sama (misal MV, cover, live), masing-masing video memiliki rekaman dan offset waktu sendiri.</li>
+        <li>Migrasi cache lama: rekaman versi sebelumnya yang berbasis <code>Artist - Title</code> otomatis disalin ke <code>videoId</code> saat video diputar, lalu key lama dibersihkan.</li>
+        <li>Sumber info video: secara default menggunakan data langsung dari DOM YouTube tanpa butuh API key. Jika ingin menggunakan <strong>YouTube Data API</strong> (opsional) atau <strong>Proxy</strong>, atur pada tab Konfigurasi bagian <strong>🎬 Info Video YouTube</strong>.</li>
+        <li>Judul video ditampilkan sesuai teks mentah (raw title) asli dari YouTube, sedangkan pencarian ke penyedia lirik otomatis dibersihkan dari teks tambahan seperti <code>[Official Video]</code> atau <code>(MV)</code>.</li>
         <li>Klik tombol <strong>⚙️</strong> di header widget untuk membuka halaman ini: kelola lirik tersimpan, konfigurasi API Gemini/9Router, dan hapus data.</li>
         <li>Kustomisasi UI: atur warna background, tingkat transparan, warna lirik aktif/pasif, warna romaji, dan ukuran font lewat bagian <strong>Konfigurasi Tampilan Widget</strong>.</li>
         <li>Konfigurasi API di atas disimpan di penyimpanan lokal browser dan dipakai untuk semua pemrosesan AI (romaji, terjemahan, formatting, dan fallback). Kedua API key bersifat opsional.</li>
@@ -372,6 +389,17 @@
   <div id="guide-status" data-status role="status" aria-live="polite"></div>
   </section>
   <section id="panel-changelog" role="tabpanel" aria-labelledby="tab-changelog" hidden>
+    <article class="release">
+      <h2>Versi 2.5.3</h2>
+      <time datetime="2026-10-24">24 Oktober 2026</time>
+      <ul>
+        <li>Lirik tersimpan berdasarkan ID video YouTube, dengan migrasi cache lama berbasis artis dan judul.</li>
+        <li>Tambah pilihan sumber info video: DOM YouTube, YouTube Data API, atau proxy.</li>
+        <li>Judul raw video dipertahankan untuk tampilan; query pencarian lirik dibersihkan terpisah.</li>
+        <li>Perbarui impor/ekspor pack agar mendukung ID video dan format lama.</li>
+        <li>Tingkatkan UI/UX konfigurasi serta panduan penggunaan.</li>
+      </ul>
+    </article>
     <article class="release">
       <h2>Versi 2.5.2</h2>
       <time datetime="2026-10-22">22 Oktober 2026</time>

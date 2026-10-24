@@ -3,22 +3,23 @@
 // 1. Buat elemen Widget UI
 const widgetHTML = `
   <div id="yt-lyrics-widget" style="display:none; flex-direction:column; position:fixed; top:80px; left:calc(100vw - min(720px, calc(100vw - 32px)) - 20px); width:min(620px, calc(100vw - 32px)); height:400px; min-width:min(320px, calc(100vw - 24px)); min-height:180px; max-width:calc(100vw - 24px); max-height:calc(100vh - 100px); background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:'Segoe UI',Tahoma,sans-serif; overflow:hidden; resize:both;">
-    <div id="yt-lyrics-header" style="background:#202020; padding:12px; cursor:grab; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #333;">
-      <div id="yt-lyrics-drag-handle" title="Seret untuk memindahkan widget" style="display:flex; align-items:center; gap:8px; min-height:30px; padding:4px 8px; margin:-4px 0; border:1px dashed #555; border-radius:5px; color:#bbb; cursor:grab; user-select:none;">
-        <span aria-hidden="true" style="letter-spacing:-2px; font-size:16px; line-height:1;">⠿</span>
+    <div id="yt-lyrics-header" style="background:#202020; padding:12px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #333;">
+      <div style="display:flex; align-items:center; gap:8px; min-height:30px; color:#bbb; user-select:none;">
+        <span id="yt-lyrics-drag-handle" title="Seret untuk memindahkan widget" aria-label="Seret untuk memindahkan widget" style="font-size:15px; line-height:1; letter-spacing:-3px; cursor:grab;">⋮⋮</span>
         <span style="color:#fff; font-weight:bold; font-size:14px;">🎵 Lyrics</span>
         <span id="yt-lyrics-version" style="color:#777; font-size:10px;"></span>
-        <div id="yt-lyrics-offset" style="color:#aaa; font-size:11px;" aria-live="polite"></div>
       </div>
       <div style="display:flex; gap:4px;">
-        <div id="yt-lyrics-actions" style="display:flex; gap:5px; align-items:center; justify-content:flex-end; flex-wrap:wrap; max-width:530px;"></div>
-        <button id="yt-lyrics-mgmt-toggle" style="background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; padding:4px;" title="Manajemen">⚙️</button>
+        <div id="yt-lyrics-actions"></div>
+        <button id="yt-lyrics-mgmt-toggle" style="background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; padding:4px 7px;" title="Manajemen">⚙️</button>
         <button id="yt-lyrics-close" style="background:none; border:none; color:#ff4d4d; font-weight:bold; cursor:pointer; font-size:16px; padding:4px;">&times;</button>
       </div>
     </div>
-    <div style="padding:15px; height:350px; flex:1; min-height:0; overflow:auto; color:#ddd; font-size:14px; line-height:1.6; text-align:center; scroll-behavior:smooth;" id="yt-lyrics-content">
-      <div id="yt-lyrics-title" style="color:#aaa; font-weight:bold; margin-bottom:15px; font-size:12px;"></div>
-      <div id="yt-lyrics-body"></div>
+    <div id="yt-lyrics-content-wrapper" style="position:relative; flex:1; min-height:0; background:#181818;">
+      <div style="padding:15px; height:100%; overflow:auto; color:#ddd; font-size:14px; line-height:1.6; text-align:center; scroll-behavior:smooth;" id="yt-lyrics-content">
+        <div id="yt-lyrics-title" style="color:#aaa; font-weight:bold; margin-bottom:15px; font-size:12px;"></div>
+        <div id="yt-lyrics-body"></div>
+      </div>
     </div>
   </div>
   <style>
@@ -27,10 +28,28 @@ const widgetHTML = `
     .yt-lyric-btn:hover { background:#383838; color:#fff; }
     .yt-lyric-btn-danger { color:#ff6b6b; border-color:#662222; }
     .yt-lyric-btn-primary { color:#81c995; border-color:#2a5033; }
+    .yt-lyric-btn-icon { width:34px; height:28px; padding:4px; display:inline-flex; align-items:center; justify-content:center; }
+    .yt-lyric-btn-icon svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+    #yt-lyrics-actions { display:flex; flex-direction:row; align-items:center; gap:5px; max-width:530px; white-space:nowrap; }
+    .yt-lyrics-action-row { display:contents; }
+    .yt-lyrics-toggle { display:inline-flex; align-items:center; gap:6px; padding:3px 7px; border-color:#4a4a4a; color:#aaa; }
+    .yt-lyrics-toggle-track { position:relative; display:inline-block; flex:0 0 26px; box-sizing:border-box; width:26px; height:14px; padding:0; border-radius:8px; background:#555; transition:background .15s; }
+    .yt-lyrics-toggle-track::after { content:""; position:absolute; left:2px; top:50%; width:10px; height:10px; border-radius:50%; background:#ddd; transform:translateY(-50%); transition:transform .15s; }
+    .yt-lyrics-toggle[aria-pressed="true"] { color:#d9f6e0; border-color:#50845d; }
+    .yt-lyrics-toggle[aria-pressed="true"] .yt-lyrics-toggle-track { background:#438653; }
+    .yt-lyrics-toggle[aria-pressed="true"] .yt-lyrics-toggle-track::after { transform:translate(12px, -50%); background:#fff; }
+    .yt-lyrics-sync-group { display:flex; align-items:center; gap:0; }
+    .yt-lyrics-sync-group .yt-lyric-btn { border-radius:0; }
+    .yt-lyrics-sync-group .yt-lyric-btn:first-child { border-radius:4px 0 0 4px; }
+    .yt-lyrics-sync-group .yt-lyric-btn:last-child { border-radius:0 4px 4px 0; }
+    #yt-lyrics-offset { min-width:72px; color:#81c995; font-variant-numeric:tabular-nums; }
+    #yt-lyrics-offset:disabled { opacity:1; cursor:pointer; }
+    #yt-lyrics-content { mask-image:linear-gradient(to bottom, transparent, #000 var(--lyric-fade, 12%), #000 calc(100% - var(--lyric-fade, 12%) - 4%), transparent); -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--lyric-fade, 12%), #000 calc(100% - var(--lyric-fade, 12%) - 4%), transparent); }
     #yt-lyrics-source { margin:8px 0; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
     #yt-lyrics-source input { width:240px; background:#242424; border:1px solid #555; border-radius:4px; color:#fff; padding:5px 7px; font-size:12px; }
     #yt-lyrics-help { color:#999; font-size:10px; text-align:left; max-width:520px; margin:4px auto 8px; }
     #yt-lyrics-body .lyric-sync-line { color: #888; margin: 10px 0; font-size: 16px; transition: color 0.2s, font-size 0.2s; }
+    #yt-lyrics-body .lyric-sync-line.verse-start { margin-top: var(--lyric-spacing, 20px); }
     #yt-lyrics-body .lyric-sync-line.active { color: #ffffff; font-weight: bold; font-size: 20px; }
     #yt-lyrics-body .lyric-ori { color: #ffffff; font-weight: bold; display: block; }
     #yt-lyrics-body .lyric-romaji { color: #8ab4f8; font-style: italic; display: block; }
@@ -62,9 +81,9 @@ const closeBtn = document.getElementById('yt-lyrics-close');
 const mgmtToggleBtn = document.getElementById('yt-lyrics-mgmt-toggle');
 const actionsEl = document.getElementById('yt-lyrics-actions');
 const titleEl = document.getElementById('yt-lyrics-title');
-const offsetEl = document.getElementById('yt-lyrics-offset');
 const bodyEl = document.getElementById('yt-lyrics-body');
 const contentEl = document.getElementById('yt-lyrics-content');
+const contentWrapperEl = document.getElementById('yt-lyrics-content-wrapper');
 const sourceEl = document.createElement('div');
 sourceEl.id = 'yt-lyrics-source';
 sourceEl.innerHTML = `
@@ -83,6 +102,8 @@ const DEFAULT_UI_CONFIG = {
   backgroundColor: '#181818',
   backgroundOpacity: 95,
   backdropBlur: 2,
+  lyricFadePercent: 12,
+  verseSpacing: 24,
   activeColor: '#ffffff',
   inactiveColor: '#a6a6a6',
   romajiColor: '#a9c7ff',
@@ -122,6 +143,18 @@ function applyUiTheme(config = {}) {
   widget.style.background = bgRgba;
   const backdropBlur = Math.min(20, Math.max(0, Number(theme.backdropBlur) || 0));
   widget.style.backdropFilter = backdropBlur ? `blur(${backdropBlur}px)` : 'none';
+  const legacyLyricFade = Number(config.lyricFade);
+  const lyricFade = Number.isFinite(Number(config.lyricFadePercent))
+    ? Math.min(30, Math.max(0, Number(config.lyricFadePercent)))
+    : Number.isFinite(legacyLyricFade) ? Math.min(30, Math.max(0, legacyLyricFade / 3)) : theme.lyricFadePercent;
+  const verseSpacing = Math.min(48, Math.max(0, Number(theme.verseSpacing) || 0));
+  contentWrapperEl.style.background = bgRgba;
+  contentWrapperEl.style.backdropFilter = backdropBlur ? `blur(${backdropBlur}px)` : 'none';
+  contentEl.style.setProperty('--lyric-fade', `${lyricFade}%`);
+  const useLyricFade = lyricFade > 0;
+  contentEl.style.maskImage = useLyricFade ? '' : 'none';
+  contentEl.style.webkitMaskImage = useLyricFade ? '' : 'none';
+  bodyEl.style.setProperty('--lyric-spacing', `${verseSpacing}px`);
   header.style.background = headerRgba;
 
   customThemeStyle.textContent = `
@@ -246,17 +279,40 @@ function roundOffset(value) {
 
 function updateActionButtons() {
   actionsEl.innerHTML = '';
+  const primaryRow = document.createElement('div');
+  primaryRow.className = 'yt-lyrics-action-row';
+  const syncRow = document.createElement('div');
+  syncRow.className = 'yt-lyrics-action-row';
   const button = (text, className, title, handler) => {
     const element = document.createElement('button');
     element.className = `yt-lyric-btn ${className}`;
-    element.textContent = text;
+    if (text === 'Refresh' || text === 'Hapus') {
+      element.classList.add('yt-lyric-btn-icon');
+      element.innerHTML = text === 'Refresh'
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3"/></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
+      element.setAttribute('aria-label', title);
+    } else {
+      element.textContent = text;
+    }
     element.title = title;
     element.onclick = handler;
     return element;
   };
+  const toggleButton = (text, key) => {
+    const enabled = Boolean(currentLyricsPayload[key]);
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.className = 'yt-lyric-btn yt-lyrics-toggle';
+    element.setAttribute('aria-pressed', String(enabled));
+    element.title = `${enabled ? 'Sembunyikan' : 'Tampilkan'} ${text.toLowerCase()}`;
+    element.innerHTML = `<span>${text}</span><span class="yt-lyrics-toggle-track" aria-hidden="true"></span>`;
+    element.onclick = () => toggleCurrentLyricVisibility(key);
+    return element;
+  };
 
-  if (currentSongInfo?.videoId && !isLoading) {
-    actionsEl.appendChild(button('Refresh', '', 'Ambil ulang lirik', () => {
+  const refreshBtn = currentSongInfo?.videoId && !isLoading
+    ? button('Refresh', '', 'Ambil ulang lirik', () => {
       chrome.runtime.sendMessage({ action: 'getActiveVideoInfo' }, (activeInfo) => {
         if (chrome.runtime.lastError || !activeInfo?.songTitle) {
           bodyEl.innerHTML = 'Tidak ada video YouTube aktif.';
@@ -264,11 +320,11 @@ function updateActionButtons() {
         }
         loadLyrics(activeInfo);
       });
-    }));
-  }
+    })
+    : null;
 
   if (isLoading && !isStopped) {
-    actionsEl.appendChild(button('Stop', 'yt-lyric-btn-danger', 'Hentikan proses otomatis', () => {
+    primaryRow.appendChild(button('Stop', 'yt-lyric-btn-danger', 'Hentikan proses otomatis', () => {
       isStopped = true;
       currentLoadToken += 1;
       isLoading = false;
@@ -277,57 +333,46 @@ function updateActionButtons() {
     }));
   }
 
-  if (!currentSongInfo?.videoId || !currentLyricsPayload || isLoading) return;
-
-  if (currentLyricsPayload.type === 'synced') {
-    actionsEl.appendChild(button(
-      currentLyricsPayload.showTranslation ? 'Terj: ON' : 'Terj: OFF',
-      currentLyricsPayload.showTranslation ? 'yt-lyric-btn-primary' : '',
-      'Tampilkan/sembunyikan terjemahan untuk lirik ini',
-      () => toggleCurrentLyricVisibility('showTranslation')
-    ));
-    actionsEl.appendChild(button(
-      currentLyricsPayload.showOriginal ? 'Asli: ON' : 'Asli: OFF',
-      currentLyricsPayload.showOriginal ? 'yt-lyric-btn-primary' : '',
-      'Tampilkan/sembunyikan lirik asli untuk lirik ini',
-      () => toggleCurrentLyricVisibility('showOriginal')
-    ));
-  }
-
-  if (isFromCache) {
-    actionsEl.appendChild(button('Hapus', 'yt-lyric-btn-danger', 'Hapus lirik tersimpan', () => {
-      deleteLyrics(currentSongInfo.videoId);
-    }));
-  } else {
-    actionsEl.appendChild(button('Simpan', 'yt-lyric-btn-primary', 'Simpan lirik ke local storage', () => {
-      const payload = withCurrentVideoMetadata(currentLyricsPayload);
-      chrome.storage.local.set({ [currentSongInfo.videoId]: withSongMetadata(payload, currentSongInfo) }, () => {
-        currentLyricsPayload = payload;
-        isFromCache = true;
-        updateActionButtons();
-      });
-    }));
-  }
-
-  if (currentLyricsPayload.type === 'synced') {
-    const offset = currentLyricsPayload.offset || 0;
-    actionsEl.appendChild(button('-0.1s', '', 'Lirik muncul 0.1 detik lebih lambat', () => updateTimestampOffset(0.1)));
-    actionsEl.appendChild(button('+0.1s', '', 'Lirik muncul 0.1 detik lebih cepat', () => updateTimestampOffset(-0.1)));
-    const resetBtn = button('Reset', 'yt-lyric-btn-danger', 'Kembalikan timestamp ke sumber asli', resetTimestamp);
-    if (offset === 0) {
-      resetBtn.disabled = true;
-      resetBtn.style.opacity = '0.5';
-      resetBtn.style.cursor = 'not-allowed';
+  if (currentSongInfo?.videoId && currentLyricsPayload && !isLoading) {
+    if (currentLyricsPayload.type === 'synced') {
+      primaryRow.appendChild(toggleButton('Terj', 'showTranslation'));
+      primaryRow.appendChild(toggleButton('Asli', 'showOriginal'));
     }
-    actionsEl.appendChild(resetBtn);
+
+    if (isFromCache) {
+      if (refreshBtn) primaryRow.appendChild(refreshBtn);
+      primaryRow.appendChild(button('Hapus', 'yt-lyric-btn-danger', 'Hapus lirik tersimpan', () => {
+        deleteLyrics(currentSongInfo.videoId);
+      }));
+    } else {
+      primaryRow.appendChild(button('Simpan', 'yt-lyric-btn-primary', 'Simpan lirik ke local storage', () => {
+        const payload = withCurrentVideoMetadata(currentLyricsPayload);
+        chrome.storage.local.set({ [currentSongInfo.videoId]: withSongMetadata(payload, currentSongInfo) }, () => {
+          currentLyricsPayload = payload;
+          isFromCache = true;
+          updateActionButtons();
+        });
+      }));
+    }
+
+    if (currentLyricsPayload.type === 'synced') {
+      const syncGroup = document.createElement('div');
+      syncGroup.className = 'yt-lyrics-sync-group';
+      syncGroup.appendChild(button('-0.1s', '', 'Lirik muncul 0.1 detik lebih lambat', () => updateTimestampOffset(0.1)));
+      syncGroup.appendChild(button(`${(currentLyricsPayload.offset || 0) >= 0 ? '+' : ''}${(currentLyricsPayload.offset || 0).toFixed(1)}s`, '', 'Klik untuk reset sinkronisasi', resetTimestamp));
+      syncGroup.appendChild(button('+0.1s', '', 'Lirik muncul 0.1 detik lebih cepat', () => updateTimestampOffset(-0.1)));
+      syncRow.appendChild(syncGroup);
+    }
   }
+  if (refreshBtn && !primaryRow.contains(refreshBtn)) primaryRow.appendChild(refreshBtn);
+  if (syncRow.childElementCount) actionsEl.appendChild(syncRow);
+  if (primaryRow.childElementCount) actionsEl.appendChild(primaryRow);
 }
 
 function updateOffsetInfo() {
   const offset = currentLyricsPayload?.type === 'synced' ? currentLyricsPayload.offset || 0 : 0;
-  offsetEl.textContent = currentLyricsPayload?.type === 'synced'
-    ? `Sinkronisasi: ${offset >= 0 ? '+' : ''}${offset.toFixed(1)}s`
-    : '';
+  const indicator = actionsEl.querySelector('.yt-lyrics-sync-group button:nth-child(2)');
+  if (indicator) indicator.textContent = `${offset >= 0 ? '+' : ''}${offset.toFixed(1)}s`;
 }
 
 function persistCurrentLyrics() {
@@ -449,6 +494,7 @@ function renderSyncedLyrics(lines) {
     const p = document.createElement('p');
     p.id = `lyric-line-${index}`;
     p.className = 'lyric-sync-line';
+    if (index > 0 && line.time - parsedLyrics[index - 1].time >= 4.5) p.classList.add('verse-start');
     const originalText = originalLines.find((original) => original.trIndex === line.trIndex)?.text;
     if (originalText && currentLyricsPayload.showOriginal) {
       const span = document.createElement('span');
@@ -527,7 +573,6 @@ function loadLyrics(info, forceFetch = false) {
     parsedLyrics = [];
     activeLyricIndex = -1;
     titleEl.textContent = `Lagu: ${info.fullName || `${info.artist} - ${info.songTitle}`}`;
-    offsetEl.textContent = '';
     lyricsUrlInput.value = '';
     isLoading = true;
     updateActionButtons();
@@ -657,10 +702,11 @@ function updateActiveLyric(currentTime) {
   const current = document.getElementById(`lyric-line-${targetIndex}`);
   if (current) {
     current.classList.add('active');
+    bodyEl.style.paddingBottom = `${Math.ceil(contentEl.clientHeight * 0.6)}px`;
     const contentRect = contentEl.getBoundingClientRect();
     const lineRect = current.getBoundingClientRect();
     contentEl.scrollTo({
-      top: contentEl.scrollTop + lineRect.top - contentRect.top - (contentEl.clientHeight - current.offsetHeight) / 2,
+      top: contentEl.scrollTop + lineRect.top - contentRect.top - (contentEl.clientHeight * 0.42 - current.offsetHeight / 2),
       behavior: 'smooth'
     });
   }

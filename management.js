@@ -2,6 +2,7 @@
 const listEl = document.getElementById('list');
 const countEl = document.getElementById('count');
 const searchEl = document.getElementById('search');
+const groupToggleEl = document.getElementById('group-toggle');
 const clearAllBtn = document.getElementById('clear-all');
 const exportLyricsBtn = document.getElementById('export-lyrics');
 const exportSelectedBtn = document.getElementById('export-selected');
@@ -30,6 +31,8 @@ const uiBgColorEl = document.getElementById('cfg-ui-bg-color');
 const uiBgOpacityEl = document.getElementById('cfg-ui-bg-opacity');
 const uiBgOpacityValEl = document.getElementById('cfg-ui-bg-opacity-val');
 const uiBackdropBlurEl = document.getElementById('cfg-ui-backdrop-blur');
+const uiLyricFadeEl = document.getElementById('cfg-ui-lyric-fade');
+const uiVerseSpacingEl = document.getElementById('cfg-ui-verse-spacing');
 const uiActiveColorEl = document.getElementById('cfg-ui-active-color');
 const uiInactiveColorEl = document.getElementById('cfg-ui-inactive-color');
 const uiRomajiColorEl = document.getElementById('cfg-ui-romaji-color');
@@ -54,6 +57,8 @@ const DEFAULT_UI_CONFIG = {
   backgroundColor: '#181818',
   backgroundOpacity: 95,
   backdropBlur: 2,
+  lyricFadePercent: 12,
+  verseSpacing: 24,
   activeColor: '#ffffff',
   inactiveColor: '#a6a6a6',
   romajiColor: '#a9c7ff',
@@ -78,6 +83,7 @@ const DEFAULT_TRANSLATE_CONFIG = {
 };
 
 let savedItems = [];
+let groupByArtist = true;
 const selectedKeys = new Set();
 
 function normalizedKey(value) {
@@ -267,7 +273,27 @@ function render() {
     return;
   }
 
-  items.forEach(({ key, payload }) => {
+  const groups = new Map();
+  items.forEach((item) => {
+    const separator = item.key.indexOf(' - ');
+    const artist = groupByArtist
+      ? item.payload?.artistName?.trim() || (separator >= 0 ? item.key.slice(0, separator).trim() : 'Artis tidak diketahui')
+      : '';
+    if (!groups.has(artist)) groups.set(artist, []);
+    groups.get(artist).push(item);
+  });
+
+  groups.forEach((groupItems, artist) => {
+    let groupContainer = listEl;
+    if (groupByArtist) {
+      groupContainer = document.createElement('details');
+      groupContainer.className = 'artist-group';
+      const heading = document.createElement('summary');
+      heading.textContent = `${artist} · ${groupItems.length} lagu`;
+      groupContainer.appendChild(heading);
+      listEl.appendChild(groupContainer);
+    }
+    groupItems.forEach(({ key, payload }) => {
     const row = document.createElement('div');
     row.className = 'item';
 
@@ -328,8 +354,10 @@ function render() {
     }
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'btn-danger';
-    delBtn.textContent = 'Hapus';
+    delBtn.className = 'btn-danger icon-btn';
+    delBtn.title = 'Hapus lirik tersimpan';
+    delBtn.setAttribute('aria-label', `Hapus ${displayName}`);
+    delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
     delBtn.onclick = () => {
       chrome.storage.local.remove(key, () => {
         if (chrome.runtime.lastError) {
@@ -347,7 +375,8 @@ function render() {
     row.appendChild(checkbox);
     row.appendChild(info);
     row.appendChild(actions);
-    listEl.appendChild(row);
+    groupContainer.appendChild(row);
+    });
   });
   updateSelectionControls(items);
 }
@@ -381,8 +410,14 @@ function loadItems() {
   chrome.storage.local.get(null, (items) => {
     savedItems = Object.keys(items)
       .filter((key) => key !== 'debug' && items[key] && typeof items[key] === 'object' && 'data' in items[key])
-      .sort()
-      .map((key) => ({ key, payload: items[key] }));
+      .map((key) => ({ key, payload: items[key] }))
+      .sort((a, b) => {
+        const nameA = a.payload?.artistName && a.payload?.trackName
+          ? `${a.payload.artistName} - ${a.payload.trackName}` : a.key;
+        const nameB = b.payload?.artistName && b.payload?.trackName
+          ? `${b.payload.artistName} - ${b.payload.trackName}` : b.key;
+        return nameA.localeCompare(nameB, 'id', { sensitivity: 'base' });
+      });
     render();
   });
 }
@@ -442,6 +477,9 @@ function loadUiConfig(config = {}) {
   uiBgOpacityEl.value = ui.backgroundOpacity;
   uiBgOpacityValEl.textContent = `${ui.backgroundOpacity}%`;
   uiBackdropBlurEl.value = Math.min(20, Math.max(0, Number(ui.backdropBlur) || 0));
+  const rawFade = Number(ui.lyricFadePercent ?? (ui.lyricFade ? ui.lyricFade / 3 : DEFAULT_UI_CONFIG.lyricFadePercent));
+  uiLyricFadeEl.value = Math.min(30, Math.max(0, Number.isFinite(rawFade) ? rawFade : DEFAULT_UI_CONFIG.lyricFadePercent));
+  uiVerseSpacingEl.value = Math.min(48, Math.max(0, Number(ui.verseSpacing) || 0));
   uiShowOriginalEl.checked = ui.showOriginal !== false;
   uiTextStyles.forEach(({ role, size, color, toggles }) => {
     size.value = Math.min(48, Math.max(8, Number(ui[`${role}FontSize`]) || DEFAULT_UI_CONFIG[`${role}FontSize`]));
@@ -465,6 +503,8 @@ function getUiConfigFromForm() {
     backgroundColor: uiBgColorEl.value,
     backgroundOpacity: Number(uiBgOpacityEl.value),
     backdropBlur: Math.min(20, Math.max(0, Number(uiBackdropBlurEl.value) || 0)),
+    lyricFadePercent: Math.min(30, Math.max(0, Number(uiLyricFadeEl.value) || 0)),
+    verseSpacing: Math.min(48, Math.max(0, Number(uiVerseSpacingEl.value) || 0)),
     showOriginal: uiShowOriginalEl.checked,
     ...Object.fromEntries(uiTextStyles.flatMap(({ role, size, color, toggles }) => [
       [`${role}Color`, color.value],
@@ -502,6 +542,12 @@ clearAllBtn.onclick = () => {
 };
 
 searchEl.oninput = render;
+groupToggleEl.onclick = () => {
+  groupByArtist = !groupByArtist;
+  groupToggleEl.setAttribute('aria-pressed', String(groupByArtist));
+  groupToggleEl.textContent = groupByArtist ? 'Ungroup' : 'Group by Artist';
+  render();
+};
 
 saveConfigBtn.onclick = () => {
   const config = getConfigFromForm();
