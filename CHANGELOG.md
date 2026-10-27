@@ -2,6 +2,14 @@
 
 Format mengikuti prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versi rilis sumber utama ada di `manifest.json`.
 
+## [2.5.4] - 2026-10-27
+
+### Changed
+- Sempurnakan implementasi dan kesiapan rilis ekstensi.
+
+### Tested
+- Evaluasi kompatibilitas dan kelengkapan ekstensi terhadap persyaratan publikasi Chrome Web Store.
+
 ## [2.5.3] - 2026-10-24
 
 ### Added

@@ -68,33 +68,38 @@ async function getVideoInfo(videoId, tabId) {
   const config = await getVideoInfoConfig();
   if (config.provider === "dom") return getDomVideoInfo(tabId, videoId);
 
-  let title;
-  let channelTitle;
-  if (config.provider === "youtubeApi") {
-    if (!config.apiKey) throw new Error("API key YouTube belum diatur.");
-    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
-    url.search = new URLSearchParams({ part: "snippet", id: videoId, key: config.apiKey });
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`YouTube Data API HTTP ${response.status}`);
-    const item = (await response.json()).items?.[0];
-    title = item?.snippet?.title;
-    channelTitle = item?.snippet?.channelTitle;
-  } else if (config.provider === "proxy") {
-    if (!config.proxyUrl) throw new Error("URL proxy belum diatur.");
-    const url = new URL(config.proxyUrl);
-    if (url.protocol !== "https:") throw new Error("Proxy harus memakai HTTPS.");
-    url.searchParams.set("videoId", videoId);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Proxy info video HTTP ${response.status}`);
-    const data = await response.json();
-    title = data?.title;
-    channelTitle = data?.channelTitle;
-  } else {
-    throw new Error("Sumber info video tidak valid.");
+  try {
+    let title;
+    let channelTitle;
+    if (config.provider === "youtubeApi") {
+      if (!config.apiKey) throw new Error("API key YouTube belum diatur.");
+      const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+      url.search = new URLSearchParams({ part: "snippet", id: videoId, key: config.apiKey });
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`YouTube Data API HTTP ${response.status}`);
+      const item = (await response.json()).items?.[0];
+      title = item?.snippet?.title;
+      channelTitle = item?.snippet?.channelTitle;
+    } else if (config.provider === "proxy") {
+      if (!config.proxyUrl) throw new Error("URL proxy belum diatur.");
+      const url = new URL(config.proxyUrl);
+      if (url.protocol !== "https:") throw new Error("Proxy harus memakai HTTPS.");
+      url.searchParams.set("videoId", videoId);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Proxy info video HTTP ${response.status}`);
+      const data = await response.json();
+      title = data?.title;
+      channelTitle = data?.channelTitle;
+    } else {
+      throw new Error("Sumber info video tidak valid.");
+    }
+    const info = normalizeVideoInfo(videoId, title, channelTitle);
+    if (!info) throw new Error("Respons info video tidak memuat judul valid.");
+    return info;
+  } catch (error) {
+    debugError(`[Info Video] ${config.provider} gagal, fallback DOM:`, error);
+    return getDomVideoInfo(tabId, videoId);
   }
-  const info = normalizeVideoInfo(videoId, title, channelTitle);
-  if (!info) throw new Error("Respons info video tidak memuat judul valid.");
-  return info;
 }
 
 function getAIConfig() {
