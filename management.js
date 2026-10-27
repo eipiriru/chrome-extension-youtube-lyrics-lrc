@@ -38,6 +38,7 @@ const uiInactiveColorEl = document.getElementById('cfg-ui-inactive-color');
 const uiRomajiColorEl = document.getElementById('cfg-ui-romaji-color');
 const uiTranslationColorEl = document.getElementById('cfg-ui-translation-color');
 const uiShowOriginalEl = document.getElementById('cfg-ui-show-original');
+const uiShowRomajiEl = document.getElementById('cfg-ui-show-romaji');
 const uiTextStyles = ['active', 'inactive', 'original', 'romaji', 'translation'].map((role) => ({
   role,
   size: document.getElementById(`cfg-ui-${role}-font-size`),
@@ -64,6 +65,7 @@ const DEFAULT_UI_CONFIG = {
   romajiColor: '#a9c7ff',
   translationColor: '#a6dfb5',
   showOriginal: true,
+  showRomaji: true,
   originalColor: '#ffffff',
   activeFontSize: 24,
   inactiveFontSize: 16,
@@ -107,6 +109,7 @@ function lyricRecord(key, payload) {
     romajiLyrics: payload?.data || '',
     showOriginal: typeof payload?.showOriginal === 'boolean' ? payload.showOriginal : undefined,
     showTranslation: typeof payload?.showTranslation === 'boolean' ? payload.showTranslation : undefined,
+    showRomaji: typeof payload?.showRomaji === 'boolean' ? payload.showRomaji : undefined,
     translations: payload?.translateLang && Array.isArray(payload?.translations)
       ? { [payload.translateLang]: payload.translations }
       : {},
@@ -148,6 +151,7 @@ function parseLyricsPack(pack) {
       lrclibUrl: typeof item.lrclibUrl === 'string' && /^https:\/\/lrclib\.net\/tracks\/\d+\/?$/.test(item.lrclibUrl) ? item.lrclibUrl : '',
       ...(typeof item.showOriginal === 'boolean' ? { showOriginal: item.showOriginal } : {}),
       ...(typeof item.showTranslation === 'boolean' ? { showTranslation: item.showTranslation } : {}),
+      ...(typeof item.showRomaji === 'boolean' ? { showRomaji: item.showRomaji } : {}),
       videos
     };
     return {
@@ -481,6 +485,7 @@ function loadUiConfig(config = {}) {
   uiLyricFadeEl.value = Math.min(30, Math.max(0, Number.isFinite(rawFade) ? rawFade : DEFAULT_UI_CONFIG.lyricFadePercent));
   uiVerseSpacingEl.value = Math.min(48, Math.max(0, Number(ui.verseSpacing) || 0));
   uiShowOriginalEl.checked = ui.showOriginal !== false;
+  uiShowRomajiEl.checked = ui.showRomaji !== false;
   uiTextStyles.forEach(({ role, size, color, toggles }) => {
     size.value = Math.min(48, Math.max(8, Number(ui[`${role}FontSize`]) || DEFAULT_UI_CONFIG[`${role}FontSize`]));
     color.value = ui[`${role}Color`];
@@ -506,6 +511,7 @@ function getUiConfigFromForm() {
     lyricFadePercent: Math.min(30, Math.max(0, Number(uiLyricFadeEl.value) || 0)),
     verseSpacing: Math.min(48, Math.max(0, Number(uiVerseSpacingEl.value) || 0)),
     showOriginal: uiShowOriginalEl.checked,
+    showRomaji: uiShowRomajiEl.checked,
     ...Object.fromEntries(uiTextStyles.flatMap(({ role, size, color, toggles }) => [
       [`${role}Color`, color.value],
       [`${role}FontSize`, Math.min(48, Math.max(8, Number(size.value) || 8))],
@@ -601,6 +607,12 @@ saveTranslateConfigBtn.onclick = () => {
 uiShowOriginalEl.onchange = () => {
   chrome.storage.local.get('uiConfig', ({ uiConfig = {} }) => {
     chrome.storage.local.set({ uiConfig: { ...uiConfig, showOriginal: uiShowOriginalEl.checked } });
+  });
+};
+
+uiShowRomajiEl.onchange = () => {
+  chrome.storage.local.get('uiConfig', ({ uiConfig = {} }) => {
+    chrome.storage.local.set({ uiConfig: { ...uiConfig, showRomaji: uiShowRomajiEl.checked } });
   });
 };
 

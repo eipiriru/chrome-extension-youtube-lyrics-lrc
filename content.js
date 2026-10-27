@@ -2,7 +2,7 @@
 
 // 1. Buat elemen Widget UI
 const widgetHTML = `
-  <div id="yt-lyrics-widget" style="display:none; flex-direction:column; position:fixed; top:80px; left:calc(100vw - min(720px, calc(100vw - 32px)) - 20px); width:min(620px, calc(100vw - 32px)); height:400px; min-width:min(320px, calc(100vw - 24px)); min-height:180px; max-width:calc(100vw - 24px); max-height:calc(100vh - 100px); background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:'Segoe UI',Tahoma,sans-serif; overflow:hidden; resize:both;">
+  <div id="yt-lyrics-widget" style="display:none; flex-direction:column; position:fixed; top:80px; left:calc(100vw - min(720px, calc(100vw - 32px)) - 20px); width:min(675px, calc(100vw - 32px)); height:400px; min-width:min(320px, calc(100vw - 24px)); min-height:180px; max-width:calc(100vw - 24px); max-height:calc(100vh - 100px); background:#181818; border:1px solid #333; border-radius:10px; z-index:999999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:'Segoe UI',Tahoma,sans-serif; overflow:hidden; resize:both;">
     <div id="yt-lyrics-header" style="background:#202020; padding:12px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #333;">
       <div style="display:flex; align-items:center; gap:8px; min-height:30px; color:#bbb; user-select:none;">
         <span id="yt-lyrics-drag-handle" title="Seret untuk memindahkan widget" aria-label="Seret untuk memindahkan widget" style="font-size:15px; line-height:1; letter-spacing:-3px; cursor:grab;">⋮⋮</span>
@@ -58,6 +58,7 @@ const widgetHTML = `
     #yt-lyrics-body .lyric-sync-line.active .lyric-translation { font-size: 14px; }
     #yt-lyrics-body.hide-translation .lyric-translation,
     #yt-lyrics-body.hide-translation .lyric-id { display: none !important; }
+    #yt-lyrics-body.hide-romaji .lyric-romaji { display: none !important; }
     #yt-lyrics-body .loading { color: #fbbc04; font-style: italic; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0% {opacity:0.5;} 50% {opacity:1;} 100% {opacity:0.5;} }
     
@@ -109,6 +110,7 @@ const DEFAULT_UI_CONFIG = {
   romajiColor: '#a9c7ff',
   translationColor: '#a6dfb5',
   showOriginal: true,
+  showRomaji: true,
   originalColor: '#ffffff',
   activeFontSize: 24,
   inactiveFontSize: 16,
@@ -184,6 +186,13 @@ function applyUiTheme(config = {}) {
       font-weight: ${theme.activeFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
       text-shadow: 0 1px 6px rgba(0,0,0,0.45);
     }
+    #yt-lyrics-body.hide-romaji .lyric-sync-line.active .lyric-original {
+      color: ${theme.activeColor} !important;
+      font-size: ${theme.activeFontSize}px !important;
+      font-style: ${theme.activeFontStyle.includes('italic') ? 'italic' : 'normal'} !important;
+      font-weight: ${theme.activeFontStyle.includes('bold') ? 'bold' : 'normal'} !important;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.45);
+    }
     #yt-lyrics-body .lyric-ori {
       color: ${theme.originalColor} !important;
       font-size: ${theme.originalFontSize}px !important;
@@ -217,12 +226,14 @@ function applyUiTheme(config = {}) {
 
 chrome.storage.local.get('uiConfig', ({ uiConfig }) => {
   showOriginalLyrics = uiConfig?.showOriginal !== false;
+  defaultShowRomaji = uiConfig?.showRomaji !== false;
   applyUiTheme(uiConfig);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.uiConfig) {
     showOriginalLyrics = changes.uiConfig.newValue?.showOriginal !== false;
+    defaultShowRomaji = changes.uiConfig.newValue?.showRomaji !== false;
     applyUiTheme(changes.uiConfig.newValue);
     if (currentLyricsPayload?.type === 'synced') renderCurrentPayload();
   }
@@ -246,6 +257,7 @@ let currentLoadToken = 0;
 let lastYouTubeVideoId = null;
 let lastSourceVideoId = null;
 let showOriginalLyrics = true;
+let defaultShowRomaji = true;
 
 // Pengaturan terjemahan (chrome.storage.local "translateConfig").
 // Toggle hanya menampilkan/menyembunyikan terjemahan; proses AI tidak dipengaruhi toggle.
@@ -337,6 +349,7 @@ function updateActionButtons() {
     if (currentLyricsPayload.type === 'synced') {
       primaryRow.appendChild(toggleButton('Terj', 'showTranslation'));
       primaryRow.appendChild(toggleButton('Asli', 'showOriginal'));
+      primaryRow.appendChild(toggleButton('Roma', 'showRomaji'));
     }
 
     if (isFromCache) {
@@ -490,22 +503,26 @@ function renderSyncedLyrics(lines) {
     : [];
   activeLyricIndex = -1;
   bodyEl.innerHTML = '';
+  const isRomajiVisible = currentLyricsPayload?.showRomaji !== false;
+  bodyEl.classList.toggle('hide-romaji', !isRomajiVisible);
   parsedLyrics.forEach((line, index) => {
     const p = document.createElement('p');
     p.id = `lyric-line-${index}`;
     p.className = 'lyric-sync-line';
     if (index > 0 && line.time - parsedLyrics[index - 1].time >= 4.5) p.classList.add('verse-start');
     const originalText = originalLines.find((original) => original.trIndex === line.trIndex)?.text;
-    if (originalText && currentLyricsPayload.showOriginal) {
+    if (originalText && (currentLyricsPayload.showOriginal || !isRomajiVisible)) {
       const span = document.createElement('span');
       span.className = 'lyric-original';
       span.textContent = originalText;
       p.appendChild(span);
     }
-    const romaji = document.createElement('span');
-    romaji.className = 'lyric-romaji';
-    romaji.textContent = line.text;
-    p.appendChild(romaji);
+    if (isRomajiVisible) {
+      const romaji = document.createElement('span');
+      romaji.className = 'lyric-romaji';
+      romaji.textContent = line.text;
+      p.appendChild(romaji);
+    }
     if (currentLyricsPayload.showTranslation && translations && typeof translations[line.trIndex] === 'string') {
       const span = document.createElement('span');
       span.className = 'lyric-translation';
@@ -531,6 +548,7 @@ function displayLyrics(payload, fromCache) {
       translateLang: payload.translateLang || null,
       showOriginal: typeof payload.showOriginal === 'boolean' ? payload.showOriginal : showOriginalLyrics,
       showTranslation: typeof payload.showTranslation === 'boolean' ? payload.showTranslation : showTranslation,
+      showRomaji: typeof payload.showRomaji === 'boolean' ? payload.showRomaji : defaultShowRomaji,
       lrclibId: Number.isInteger(payload.lrclibId) ? payload.lrclibId : null,
       videos: Array.isArray(payload.videos) ? payload.videos : [],
       lrclibUrl: typeof payload.lrclibUrl === 'string' && payload.lrclibUrl
