@@ -394,7 +394,13 @@ function persistCurrentLyrics() {
 }
 
 function withSongMetadata(payload, info) {
-  return { ...payload, artistName: info.artist || '', trackName: info.songTitle || '' };
+  const rawTitle = info.rawTitle || info.songTitle || '';
+  return {
+    ...payload,
+    artistName: info.artist || '',
+    trackName: rawTitle,
+    songTitle: info.songTitle || rawTitle
+  };
 }
 
 function withCurrentVideoMetadata(payload) {
@@ -655,7 +661,10 @@ function loadLyrics(info, forceFetch = false) {
         if (storedPayload) {
         isLoading = false;
             const cachedPayload = withSongMetadata(withCurrentVideoMetadata(storedPayload), info);
-            if (legacyPayload || cachedPayload !== storedPayload) {
+            const rawTrackName = info.rawTitle || info.songTitle || '';
+            const needsMetadataUpdate = legacyPayload || storedPayload.trackName !== rawTrackName ||
+              storedPayload.artistName !== (info.artist || '') || storedPayload.songTitle !== (info.songTitle || rawTrackName);
+            if (needsMetadataUpdate) {
               chrome.storage.local.set({ [info.videoId]: cachedPayload }, () => {
                 if (!chrome.runtime.lastError && legacyPayload) {
                   chrome.storage.local.remove(info.fullName);

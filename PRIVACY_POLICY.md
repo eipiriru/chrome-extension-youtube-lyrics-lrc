@@ -45,4 +45,6 @@ If functionality changes in a way that affects data handling, this policy will b
 
 ## Contact
 
-For questions or bug reports, please open an issue in the extension's GitHub repository.
+For questions or bug reports, open an issue in the [GitHub repository](https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/).
+
+The extension includes an optional external link to [Trakteer](https://trakteer.id/ainurkz) for voluntary development support. The extension does not process payments or track link clicks; Trakteer's own privacy policy applies if you visit or use its service.

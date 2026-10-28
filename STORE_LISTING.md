@@ -36,6 +36,11 @@ See [Privacy Policy](PRIVACY_POLICY.md).
 
 Synced lyrics are powered by [LRCLIB — Free & Open Lyrics Library](https://lrclib.net/). Support LRCLIB at [lrclib.net](https://lrclib.net/).
 
+### Source Code and Support
+
+Source code and bug reports: [GitHub](https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/).
+Optional voluntary support for development: [Trakteer](https://trakteer.id/ainurkz).
+
 ## Category
 
 - Productivity
@@ -68,7 +73,7 @@ Used to identify the active or audible YouTube tab for cross-tab playback synchr
 
 ## Support
 
-Report bugs or request features through the GitHub repository issue tracker.
+Report bugs or request features through the [GitHub repository](https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/). Development support through [Trakteer](https://trakteer.id/ainurkz) is optional and voluntary.
 
 ## Release Checklist
 

@@ -48,6 +48,11 @@ Fungsi inti lirik sinkron ekstensi ini bergantung pada data dan API dari [LRCLIB
 
 Lagu yang belum ada di lyrics pack bisa diajukan melalui [form request lagu](https://forms.gle/gs9XVFNYfWBvZGyZ8).
 
+## Source Code dan Dukungan
+
+- Source code dan laporan bug: [GitHub](https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/).
+- Dukungan pengembangan bersifat sukarela: [Trakteer](https://trakteer.id/ainurkz).
+
 ## Konfigurasi AI Opsional
 
 Ekstensi tetap berfungsi tanpa konfigurasi AI:
@@ -96,3 +101,24 @@ const DEBUG = false;
 ## Lisensi
 
 [MIT](LICENSE)
+
+
+## Support My Work
+
+If you find my projects useful, consider supporting my work.
+Your support helps me maintain existing projects and build new open-source tools.
+
+<a href="https://trakteer.id/ainurkz" target="_blank">
+  <img
+    id="wse-buttons-preview"
+    src="https://cdn.trakteer.id/images/embed/trbtn-red-1.png?date=18-11-2023"
+    height="40"
+    style="border: 0px; height: 40px; --darkreader-inline-border-top: 0px; --darkreader-inline-border-right: 0px; --darkreader-inline-border-bottom: 0px; --darkreader-inline-border-left: 0px;"
+    alt="Traktir tahu bakso"
+    data-darkreader-inline-border-top=""
+    data-darkreader-inline-border-right=""
+    data-darkreader-inline-border-bottom=""
+    data-darkreader-inline-border-left=""
+  />
+</a>
+</div>
