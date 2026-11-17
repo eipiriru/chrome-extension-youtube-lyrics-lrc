@@ -92,11 +92,32 @@ function normalizedKey(value) {
   return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
+function normalizeTranslationsMap(translations, fallbackLang) {
+  if (!translations) return {};
+  if (Array.isArray(translations)) {
+    return fallbackLang && translations.every((line) => typeof line === 'string')
+      ? { [fallbackLang]: translations }
+      : {};
+  }
+  if (typeof translations === 'object') {
+    const result = {};
+    Object.entries(translations).forEach(([lang, lines]) => {
+      if (typeof lang === 'string' && Array.isArray(lines) && lines.every((line) => typeof line === 'string')) {
+        result[lang] = lines;
+      }
+    });
+    return result;
+  }
+  return {};
+}
+
 function lyricRecord(key, payload) {
   const separator = key.indexOf(' - ');
   const artistName = payload?.artistName || (separator < 0 ? '' : key.slice(0, separator).trim());
   const trackName = payload?.trackName || (separator < 0 ? key.trim() : key.slice(separator + 3).trim());
   const syncedLyrics = payload?.originalData || payload?.data || '';
+  const translations = normalizeTranslationsMap(payload?.translations, payload?.translateLang);
+  const translateLang = payload?.translateLang || Object.keys(translations)[0] || null;
   return {
     key: normalizedKey(`${artistName} ${trackName}`),
     videoId: /^[\w-]{11}$/.test(key) ? key : null,
@@ -110,10 +131,8 @@ function lyricRecord(key, payload) {
     showOriginal: typeof payload?.showOriginal === 'boolean' ? payload.showOriginal : undefined,
     showTranslation: typeof payload?.showTranslation === 'boolean' ? payload.showTranslation : undefined,
     showRomaji: typeof payload?.showRomaji === 'boolean' ? payload.showRomaji : undefined,
-    translations: payload?.translateLang && Array.isArray(payload?.translations)
-      ? { [payload.translateLang]: payload.translations }
-      : {},
-    translateLang: payload?.translateLang || null,
+    translations,
+    translateLang,
     offset: Number.isFinite(payload?.offset) ? payload.offset : 0,
     type: payload?.type === 'synced' ? 'synced' : 'plain'
   };
@@ -131,17 +150,16 @@ function parseLyricsPack(pack) {
     const legacyKey = `${item.artistName.trim()} - ${item.trackName.trim()}`;
     const videoId = typeof item.videoId === 'string' && /^[\w-]{11}$/.test(item.videoId) ? item.videoId : null;
     const key = videoId || legacyKey;
-    const translations = item.translations && typeof item.translations === 'object' && !Array.isArray(item.translations)
-      ? item.translations : {};
-    const language = ['id', 'en'].includes(item.translateLang) ? item.translateLang
-      : ['id', 'en'].find((lang) => Array.isArray(translations[lang])) || null;
+    const translations = normalizeTranslationsMap(item.translations, item.translateLang);
+    const availableLangs = Object.keys(translations);
+    const language = ['id', 'en'].includes(item.translateLang)
+      ? item.translateLang
+      : ['id', 'en'].find((lang) => availableLangs.includes(lang)) || availableLangs[0] || null;
     const videos = Array.isArray(item.videos) ? item.videos.filter((video) =>
       video && typeof video.videoId === 'string' && /^[\w-]{11}$/.test(video.videoId) &&
       (video.duration === null || (Number.isFinite(video.duration) && video.duration > 0))
     ).map(({ videoId, duration }) => ({ videoId, duration }))
       : Array.isArray(item.videoIds) ? item.videoIds.filter((videoId) => typeof videoId === 'string' && /^[\w-]{11}$/.test(videoId)).map((videoId) => ({ videoId, duration: null })) : [];
-    const translatedLines = language && Array.isArray(translations[language]) &&
-      translations[language].every((line) => typeof line === 'string') ? translations[language] : null;
     const payload = {
       type: item.type,
       data: item.type === 'synced' ? (item.romajiLyrics || item.syncedLyrics) : item.syncedLyrics,
@@ -158,7 +176,13 @@ function parseLyricsPack(pack) {
       key,
       legacyKey,
       payload: item.type === 'synced'
-        ? { ...payload, originalData: item.syncedLyrics, offset: Number.isFinite(item.offset) ? item.offset : 0, translations: translatedLines, translateLang: translatedLines ? language : null }
+        ? {
+            ...payload,
+            originalData: item.syncedLyrics,
+            offset: Number.isFinite(item.offset) ? item.offset : 0,
+            translations,
+            translateLang: language
+          }
         : payload
     };
   });
@@ -168,19 +192,53 @@ async function mergeLyricsPack(pack) {
   const imported = parseLyricsPack(pack);
   const existing = await chrome.storage.local.get(null);
   const additions = {};
+  const updates = {};
   const existingKeys = new Set(Object.keys(existing));
-  const existingNames = new Set(Object.keys(existing).map(normalizedKey));
+  const existingNames = new Map();
+  Object.keys(existing).forEach((k) => {
+    existingNames.set(normalizedKey(k), k);
+  });
+
+  let mergedCount = 0;
   imported.forEach(({ key, legacyKey, payload }) => {
     const matchName = normalizedKey(legacyKey);
-    if (!existingKeys.has(key) && (key !== legacyKey || !existingNames.has(matchName))) {
+    const existingKey = existingKeys.has(key) ? key : (key === legacyKey && existingNames.has(matchName) ? existingNames.get(matchName) : null);
+
+    if (!existingKey) {
       additions[key] = payload;
       existingKeys.add(key);
-      existingNames.add(matchName);
+      existingNames.set(matchName, key);
+    } else {
+      // Lagu sudah ada di storage: gabungkan translations baru tanpa menimpa yang sudah ada
+      const targetKey = existingKey;
+      const targetPayload = existing[targetKey];
+      if (targetPayload && typeof targetPayload === 'object' && payload?.type === 'synced' && payload.translations) {
+        const currentTranslations = normalizeTranslationsMap(targetPayload.translations, targetPayload.translateLang);
+        let hasNew = false;
+        Object.entries(payload.translations).forEach(([lang, lines]) => {
+          if (!currentTranslations[lang]) {
+            currentTranslations[lang] = lines;
+            hasNew = true;
+          }
+        });
+        if (hasNew) {
+          const updatedPayload = {
+            ...targetPayload,
+            translations: currentTranslations,
+            translateLang: targetPayload.translateLang || payload.translateLang || Object.keys(currentTranslations)[0] || null
+          };
+          updates[targetKey] = updatedPayload;
+          existing[targetKey] = updatedPayload;
+          mergedCount += 1;
+        }
+      }
     }
   });
-  const keys = Object.keys(additions);
-  if (keys.length) await chrome.storage.local.set(additions);
-  return { added: keys.length, skipped: imported.length - keys.length };
+
+  const keysToSave = { ...additions, ...updates };
+  const keys = Object.keys(keysToSave);
+  if (keys.length) await chrome.storage.local.set(keysToSave);
+  return { added: Object.keys(additions).length, updated: mergedCount, skipped: imported.length - Object.keys(additions).length - mergedCount };
 }
 
 function exportLyricsPack(items = savedItems) {
@@ -227,7 +285,7 @@ importFileEl.onchange = async () => {
   if (file.size > 5 * 1024 * 1024) return showStatus('Ukuran file melebihi batas 5 MB.');
   try {
     const result = await mergeLyricsPack(JSON.parse(await file.text()));
-    showStatus(`Impor selesai: ${result.added} ditambahkan, ${result.skipped} dilewati.`);
+    showStatus(`Impor selesai: ${result.added} ditambahkan, ${result.updated || 0} diperbarui, ${result.skipped} dilewati.`);
   } catch (error) {
     showStatus(`Impor gagal: ${error.message}`);
   }
@@ -243,7 +301,7 @@ loadLyricsPackBtn.onclick = () => {
     }
     try {
       const result = await mergeLyricsPack(response.pack);
-      showStatus(`Pack dimuat: ${result.added} ditambahkan, ${result.skipped} dilewati.`);
+      showStatus(`Pack dimuat: ${result.added} ditambahkan, ${result.updated || 0} diperbarui, ${result.skipped} dilewati.`);
     } catch (error) {
       showStatus(`Pack tidak valid: ${error.message}`);
     }

@@ -16,6 +16,7 @@ const widgetHTML = `
       </div>
     </div>
     <div id="yt-lyrics-content-wrapper" style="position:relative; flex:1; min-height:0; background:#181818;">
+      <div id="yt-lyrics-ai-status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
       <div style="padding:15px; height:100%; overflow:auto; color:#ddd; font-size:14px; line-height:1.6; text-align:center; scroll-behavior:smooth;" id="yt-lyrics-content">
         <div id="yt-lyrics-title" style="color:#aaa; font-weight:bold; margin-bottom:15px; font-size:12px;"></div>
         <div id="yt-lyrics-body"></div>
@@ -44,6 +45,13 @@ const widgetHTML = `
     .yt-lyrics-sync-group .yt-lyric-btn:last-child { border-radius:0 4px 4px 0; }
     #yt-lyrics-offset { min-width:72px; color:#81c995; font-variant-numeric:tabular-nums; }
     #yt-lyrics-offset:disabled { opacity:1; cursor:pointer; }
+    #yt-lyrics-ai-status { position:absolute; top:6px; left:50%; z-index:2; transform:translateX(-50%); max-width:calc(100% - 24px); padding:4px 9px; border:1px solid #665522; border-radius:999px; background:rgba(44,38,20,.94); color:#fbbc04; font-size:11px; line-height:1.3; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+    #yt-lyrics-ai-status:not([hidden])::before { content:""; display:inline-block; width:9px; height:9px; margin-right:6px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; vertical-align:-2px; animation:spin .8s linear infinite; }
+    #yt-lyrics-ai-status.done { border-color:#2a5033; background:rgba(25,48,31,.94); color:#81c995; }
+    #yt-lyrics-ai-status.done::before { content:"✓"; display:inline; border:0; animation:none; }
+    #yt-lyrics-ai-status.failed { border-color:#662222; background:rgba(55,25,25,.94); color:#ff8a8a; }
+    #yt-lyrics-ai-status.failed::before { content:"!"; display:inline; border:0; animation:none; }
+    @keyframes spin { to { transform:rotate(360deg); } }
     #yt-lyrics-content { mask-image:linear-gradient(to bottom, transparent, #000 var(--lyric-fade, 12%), #000 calc(100% - var(--lyric-fade, 12%) - 4%), transparent); -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--lyric-fade, 12%), #000 calc(100% - var(--lyric-fade, 12%) - 4%), transparent); }
     #yt-lyrics-source { margin:8px 0; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
     #yt-lyrics-source input { width:240px; background:#242424; border:1px solid #555; border-radius:4px; color:#fff; padding:5px 7px; font-size:12px; }
@@ -84,6 +92,22 @@ const actionsEl = document.getElementById('yt-lyrics-actions');
 const titleEl = document.getElementById('yt-lyrics-title');
 const bodyEl = document.getElementById('yt-lyrics-body');
 const contentEl = document.getElementById('yt-lyrics-content');
+const aiStatusEl = document.getElementById('yt-lyrics-ai-status');
+let aiStatusTimer = null;
+
+function setAiStatus(message, state = 'running', timeout = 0) {
+  clearTimeout(aiStatusTimer);
+  aiStatusEl.textContent = message;
+  aiStatusEl.className = state;
+  aiStatusEl.hidden = !message;
+  if (message && timeout > 0) {
+    aiStatusTimer = setTimeout(() => {
+      aiStatusEl.hidden = true;
+      aiStatusEl.textContent = '';
+      aiStatusEl.className = '';
+    }, timeout);
+  }
+}
 const contentWrapperEl = document.getElementById('yt-lyrics-content-wrapper');
 const sourceEl = document.createElement('div');
 sourceEl.id = 'yt-lyrics-source';
@@ -264,6 +288,7 @@ let defaultShowRomaji = true;
 let showTranslation = true;
 let translateLang = 'id';
 let translateRequestInFlight = false;
+let translationAttempts = new WeakMap();
 
 function applyTranslateSettings(config = {}) {
   showTranslation = config.show !== false;
@@ -419,24 +444,69 @@ function withCurrentVideoMetadata(payload) {
   };
 }
 
+function normalizeTranslationsMap(translations, fallbackLang) {
+  if (!translations) return {};
+  if (Array.isArray(translations)) {
+    return fallbackLang && translations.every((line) => typeof line === 'string')
+      ? { [fallbackLang]: translations }
+      : {};
+  }
+  if (typeof translations === 'object') {
+    const result = {};
+    Object.entries(translations).forEach(([lang, lines]) => {
+      if (typeof lang === 'string' && Array.isArray(lines) && lines.every((line) => typeof line === 'string')) {
+        result[lang] = lines;
+      }
+    });
+    return result;
+  }
+  return {};
+}
+
 // Terjemahan selalu diproses AI ke bahasa pilihan (apa pun status toggle) dan
 // disimpan ke storage; toggle hanya memengaruhi tampilan.
 function ensureTranslation() {
   const payload = currentLyricsPayload;
   if (!payload || payload.type !== 'synced' || !payload.data) return;
-  if (payload.translateLang === translateLang) return; // bahasa ini sudah diproses
-  if (translateRequestInFlight) return;
+  const currentTranslations = normalizeTranslationsMap(payload.translations, payload.translateLang);
+  if (currentTranslations[translateLang]) {
+    payload.translations = currentTranslations;
+    payload.translateLang = translateLang;
+    renderCurrentPayload();
+    return; // bahasa ini sudah ada di cache lokal lagu
+  }
+  const attemptedLanguages = translationAttempts.get(payload) || new Set();
+  if (attemptedLanguages.has(translateLang) || translateRequestInFlight) return;
+  attemptedLanguages.add(translateLang);
+  translationAttempts.set(payload, attemptedLanguages);
 
   translateRequestInFlight = true;
   const targetPayload = payload;
-  chrome.runtime.sendMessage({ action: 'translateLyrics', lyrics: payload.data, info: currentSongInfo }, (response) => {
+  const sourceLyrics = payload.originalData || payload.data;
+  setAiStatus(`Menerjemahkan lirik ke ${translateLang}...`);
+  chrome.runtime.sendMessage({ action: 'translateLyrics', lyrics: sourceLyrics, info: currentSongInfo }, (response) => {
     translateRequestInFlight = false;
-    if (chrome.runtime.lastError || currentLyricsPayload !== targetPayload) return;
-    targetPayload.translateLang = response?.translateLang || translateLang;
-    targetPayload.translations = Array.isArray(response?.translations) ? response.translations : null;
-    if (isFromCache) persistCurrentLyrics();
-    if (targetPayload.translations) renderCurrentPayload();
-    ensureTranslation(); // proses ulang bila bahasa berubah saat permintaan berjalan
+    if (chrome.runtime.lastError || currentLyricsPayload !== targetPayload) {
+      setAiStatus('Proses AI gagal. Lirik asli tetap ditampilkan.', 'failed', 3500);
+      return;
+    }
+    const resLang = response?.translateLang || translateLang;
+    const resLines = Array.isArray(response?.translations) && response.translations.every((line) => typeof line === 'string')
+      ? response.translations : null;
+    const mergedTranslations = normalizeTranslationsMap(targetPayload.translations, targetPayload.translateLang);
+    if (resLines) {
+      mergedTranslations[resLang] = resLines;
+    }
+    targetPayload.translations = mergedTranslations;
+    targetPayload.translateLang = resLang;
+    if (isFromCache && resLines) persistCurrentLyrics();
+    if (resLines) {
+      setAiStatus(`Terjemahan ${resLang} selesai.`, 'done', 2200);
+    } else {
+      setAiStatus('AI tidak menghasilkan terjemahan. Lirik asli tetap ditampilkan.', 'failed', 3500);
+    }
+    renderCurrentPayload();
+    ensureTranslation(); // lanjut bila bahasa pilihan berubah saat request berjalan
   });
 }
 
@@ -494,9 +564,14 @@ function parseLRC(lrcText) {
 
 function getPayloadTranslations() {
   const payload = currentLyricsPayload;
-  if (!payload || !Array.isArray(payload.translations)) return null;
-  if (payload.translateLang && payload.translateLang !== translateLang) return null;
-  return payload.translations;
+  if (!payload) return null;
+  const translationsMap = normalizeTranslationsMap(payload.translations, payload.translateLang);
+  const targetLines = translationsMap[translateLang];
+  if (Array.isArray(targetLines)) return targetLines;
+  if (Array.isArray(payload.translations) && (!payload.translateLang || payload.translateLang === translateLang)) {
+    return payload.translations;
+  }
+  return null;
 }
 
 function renderSyncedLyrics(lines) {
@@ -545,12 +620,13 @@ function displayLyrics(payload, fromCache) {
     payload = { type: 'plain', data: payload };
   }
   if (payload.type === 'synced') {
+    const translationsMap = normalizeTranslationsMap(payload.translations, payload.translateLang);
     payload = {
       type: 'synced',
       data: payload.data,
       originalData: payload.originalData || payload.data,
       offset: roundOffset(Number(payload.offset) || 0),
-      translations: Array.isArray(payload.translations) ? payload.translations : null,
+      translations: Object.keys(translationsMap).length > 0 ? translationsMap : (Array.isArray(payload.translations) ? payload.translations : null),
       translateLang: payload.translateLang || null,
       showOriginal: typeof payload.showOriginal === 'boolean' ? payload.showOriginal : showOriginalLyrics,
       showTranslation: typeof payload.showTranslation === 'boolean' ? payload.showTranslation : showTranslation,
@@ -613,13 +689,17 @@ function loadLyrics(info, forceFetch = false) {
                 return;
             }
             if (response?.success && response.lyrics && parseLRC(response.lyrics).length) {
+              const resLang = response.translateLang || null;
+              const resTranslations = response.translations && resLang
+                ? { [resLang]: response.translations }
+                : (response.translations || null);
               const payload = {
                 type: 'synced',
                 data: response.lyrics,
                 originalData: response.originalLyrics || response.lyrics,
                 offset: 0,
-                translations: response.translations || null,
-                translateLang: response.translateLang || null,
+                translations: resTranslations,
+                translateLang: resLang,
                 lrclibId: response.lrclibId || null,
                 lrclibUrl: response.lrclibUrl || ''
               };
@@ -694,7 +774,11 @@ function loadLyricsByUrl(url) {
       updateActionButtons();
       return;
     }
-    const payload = { type: 'synced', data: response.lyrics, originalData: response.originalLyrics || response.lyrics, offset: 0, translations: response.translations || null, translateLang: response.translateLang || null, lrclibId: response.lrclibId || null, lrclibUrl: response.lrclibUrl || url };
+    const resLang = response.translateLang || null;
+    const resTranslations = response.translations && resLang
+      ? { [resLang]: response.translations }
+      : (response.translations || null);
+    const payload = { type: 'synced', data: response.lyrics, originalData: response.originalLyrics || response.lyrics, offset: 0, translations: resTranslations, translateLang: resLang, lrclibId: response.lrclibId || null, lrclibUrl: response.lrclibUrl || url };
     displayLyrics(payload, false);
     if (response.aiProcessed) {
       chrome.storage.local.set({ [currentSongInfo.videoId]: withSongMetadata(withCurrentVideoMetadata(payload), currentSongInfo) });
@@ -890,10 +974,11 @@ function getYouTubeInfo() {
     }
 
     if (request.action === "updateStatus") {
-        // Cari elemen loading di dalam widget
-        const loadingEl = document.querySelector('#yt-lyrics-body .loading');
-        if (loadingEl) {
-          loadingEl.textContent = request.status;
-        }
+      const loadingEl = document.querySelector('#yt-lyrics-body .loading');
+      if (loadingEl) {
+        loadingEl.textContent = request.status;
+      } else if (request.status) {
+        setAiStatus(request.status);
       }
+    }
   });
