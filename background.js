@@ -236,7 +236,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function fetchLyricsPack() {
   try {
-    const response = await fetch("https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/releases/latest/download/lyrics-pack.json");
+    const response = await fetch("https://yoruuta.vercel.app/api/v1/lyrics-pack");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const text = await response.text();
     if (text.length > 5 * 1024 * 1024) throw new Error("Pack melebihi batas 5 MB.");

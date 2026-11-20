@@ -22,6 +22,7 @@ Fungsi inti lirik sinkron ekstensi ini bergantung pada data dan API dari [LRCLIB
 - Atur offset sinkronisasi `±0.1s` dan reset ke sumber asli.
 - Cache lirik lokal dan halaman manajemen cache.
 - Fallback lirik mentah dari Kazelyrics bila LRCLIB tidak memiliki lirik sinkron.
+- Muat lyrics pack komunitas terbaru dari Yoruuta melalui halaman manajemen.
 - Gemini dan 9Router opsional untuk romaji serta perapian lirik.
 - API key disimpan hanya di `chrome.storage.local` browser.
 
@@ -50,6 +51,7 @@ Lagu yang belum ada di lyrics pack bisa diajukan melalui [form request lagu](htt
 
 ## Source Code dan Dukungan
 
+- Informasi utama ekstensi: [yoruuta.vercel.app/yoruuta-ext](https://yoruuta.vercel.app/yoruuta-ext).
 - Source code dan laporan bug: [GitHub](https://github.com/eipiriru/chrome-extension-youtube-lyrics-lrc/).
 - Dukungan pengembangan bersifat sukarela: [Trakteer](https://trakteer.id/ainurkz).
 
@@ -81,6 +83,7 @@ Isi seluruh field 9Router:
 ## Data dan Privasi
 
 - Baca [Privacy Policy](PRIVACY_POLICY.md).
+- Saat Anda memilih **Load latest pack release**, ekstensi mengambil pack publik dari `https://yoruuta.vercel.app/api/v1/lyrics-pack`. Permintaan ini tidak menyertakan konteks halaman YouTube atau cache lokal.
 - API key dan cache lirik disimpan lokal di profil Chrome Anda.
 - API key tidak dikirim ke repository ini.
 

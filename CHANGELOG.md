@@ -2,6 +2,14 @@
 
 Format mengikuti prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versi rilis sumber utama ada di `manifest.json`.
 
+Informasi utama ekstensi: [yoruuta.vercel.app/yoruuta-ext](https://yoruuta.vercel.app/yoruuta-ext).
+
+## [2.5.5] - 2026-11-20
+
+### Changed
+- Pemuatan lyrics pack komunitas kini mengambil data dari `https://yoruuta.vercel.app/api/v1/lyrics-pack`.
+- Perbarui dokumentasi privasi, listing Chrome Web Store, dan README untuk menjelaskan unduhan pack serta URL informasi utama ekstensi.
+
 ## [2.5.4] - 2026-10-27
 
 ### Changed

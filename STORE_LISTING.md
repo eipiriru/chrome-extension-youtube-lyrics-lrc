@@ -22,15 +22,18 @@ This is an independent project using the public [LRCLIB API](https://lrclib.net/
 - Manual LRCLIB track URL loading.
 - `±0.1s` timing offset controls.
 - Local lyrics cache and management window.
+- Optional community lyrics pack download from Yoruuta.
 - Kazelyrics fallback when synced lyrics are unavailable.
 - Optional Gemini and 9Router integration for romaji and lyric formatting.
 - Works without AI API keys using raw lyrics.
 
 ### Privacy
 
-The extension does not require an account and does not include analytics or advertising trackers. Lyrics cache and optional API configuration are stored locally in Chrome. Search requests go directly to LRCLIB, Kazelyrics, and any optional AI provider configured by the user.
+The extension does not require an account and does not include analytics or advertising trackers. Lyrics cache and optional API configuration are stored locally in Chrome. Search requests go directly to LRCLIB, Kazelyrics, and any optional AI provider configured by the user. When you manually load the community lyrics pack, the extension requests `https://yoruuta.vercel.app/api/v1/lyrics-pack`; this request does not include your YouTube page context or local lyrics.
 
 See [Privacy Policy](PRIVACY_POLICY.md).
+
+Extension information: [yoruuta.vercel.app/yoruuta-ext](https://yoruuta.vercel.app/yoruuta-ext).
 
 ### Credit
 
@@ -69,6 +72,7 @@ Used to identify the active or audible YouTube tab for cross-tab playback synchr
 - `https://lrclib.net/*`: Search and load synced lyrics.
 - `https://*.kazelyrics.com/*`: Retrieve fallback lyrics.
 - `https://generativelanguage.googleapis.com/*`: Optional Gemini requests.
+- `https://yoruuta.vercel.app/*`: Download the community lyrics pack when requested.
 - `http://localhost:20128/*` and `http://127.0.0.1:20128/*`: Optional local 9Router requests.
 
 ## Support
@@ -82,6 +86,7 @@ Report bugs or request features through the [GitHub repository](https://github.c
 - [ ] Confirm `icons/icon.png` is at least `128×128`.
 - [ ] Build ZIP from extension files only.
 - [ ] Host `PRIVACY_POLICY.md` at a public HTTPS URL.
+- [ ] Publish extension information at [yoruuta.vercel.app/yoruuta-ext](https://yoruuta.vercel.app/yoruuta-ext).
 - [ ] Add screenshots: `1280×800` or `640×400`.
 - [ ] Test install from ZIP in Chrome.
 - [ ] Test with no AI keys configured.

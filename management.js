@@ -323,15 +323,21 @@ function render() {
     ? savedItems.filter((item) => `${item.payload?.artistName || ''} ${item.payload?.trackName || ''} ${item.key}`.toLowerCase().includes(query))
     : savedItems;
 
-  listEl.innerHTML = '';
+  listEl.replaceChildren();
   countEl.textContent = `${savedItems.length} lagu`;
 
   if (savedItems.length === 0) {
-    listEl.innerHTML = '<div class="empty">Belum ada lirik yang tersimpan.</div>';
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'empty';
+    emptyEl.textContent = 'Belum ada lirik yang tersimpan.';
+    listEl.appendChild(emptyEl);
     return;
   }
   if (items.length === 0) {
-    listEl.innerHTML = '<div class="empty">Tidak ada lagu yang cocok.</div>';
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'empty';
+    emptyEl.textContent = 'Tidak ada lagu yang cocok.';
+    listEl.appendChild(emptyEl);
     return;
   }
 
@@ -419,7 +425,13 @@ function render() {
     delBtn.className = 'btn-danger icon-btn';
     delBtn.title = 'Hapus lirik tersimpan';
     delBtn.setAttribute('aria-label', `Hapus ${displayName}`);
-    delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
+    const delIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    delIcon.setAttribute('viewBox', '0 0 24 24');
+    delIcon.setAttribute('aria-hidden', 'true');
+    const delPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    delPath.setAttribute('d', 'M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6');
+    delIcon.appendChild(delPath);
+    delBtn.appendChild(delIcon);
     delBtn.onclick = () => {
       chrome.storage.local.remove(key, () => {
         if (chrome.runtime.lastError) {

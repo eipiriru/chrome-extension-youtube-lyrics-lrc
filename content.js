@@ -79,8 +79,12 @@ const widgetHTML = `
   </style>
 `;
 
-// Suntikkan ke dalam halaman web
-document.body.insertAdjacentHTML('beforeend', widgetHTML);
+// Suntikkan ke dalam halaman web. Markup statis internal (bukan data eksternal)
+// di-parse via DOMParser sehingga tidak dieksekusi sebagai script.
+const widgetDoc = new DOMParser().parseFromString(widgetHTML, 'text/html');
+Array.from(widgetDoc.body.childNodes).forEach((node) => {
+  document.body.appendChild(document.importNode(node, true));
+});
 
 const widget = document.getElementById('yt-lyrics-widget');
 document.getElementById('yt-lyrics-version').textContent = `v${chrome.runtime.getManifest().version}`;
@@ -108,17 +112,84 @@ function setAiStatus(message, state = 'running', timeout = 0) {
     }, timeout);
   }
 }
+const ALLOWED_LYRIC_TAGS = new Set(['SPAN', 'DIV', 'BR', 'P', 'B', 'I', 'EM', 'STRONG', 'A']);
+
+function sanitizeLyricsHTML(html) {
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  const clean = (node) => {
+    Array.from(node.children).forEach((child) => {
+      if (!ALLOWED_LYRIC_TAGS.has(child.tagName)) {
+        child.replaceWith(doc.createTextNode(child.textContent || ''));
+        return;
+      }
+      Array.from(child.attributes).forEach((attr) => {
+        if (!['class', 'href', 'target', 'rel'].includes(attr.name)) child.removeAttribute(attr.name);
+      });
+      if (child.tagName === 'A') {
+        const href = child.getAttribute('href');
+        if (!href || !/^https?:\/\//i.test(href)) {
+          child.removeAttribute('href');
+        } else {
+          child.setAttribute('target', '_blank');
+          child.setAttribute('rel', 'noreferrer noopener');
+        }
+      }
+      clean(child);
+    });
+  };
+  clean(doc.body);
+  const fragment = document.createDocumentFragment();
+  Array.from(doc.body.childNodes).forEach((node) => fragment.appendChild(document.importNode(node, true)));
+  return fragment;
+}
+
+function showLoadingMessage(text) {
+  bodyEl.replaceChildren();
+  const loading = document.createElement('div');
+  loading.className = 'loading';
+  loading.textContent = text;
+  bodyEl.appendChild(loading);
+}
+
+function showPlainMessage(text) {
+  bodyEl.replaceChildren();
+  bodyEl.textContent = text;
+}
+
+function createSvgIcon(dPaths) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  dPaths.forEach((d) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+  });
+  return svg;
+}
+
 const contentWrapperEl = document.getElementById('yt-lyrics-content-wrapper');
 const sourceEl = document.createElement('div');
 sourceEl.id = 'yt-lyrics-source';
-sourceEl.innerHTML = `
-  <input id="yt-lyrics-url" type="url" placeholder="https://lrclib.net/tracks/34709678">
-  <button id="yt-lyrics-url-load" class="yt-lyric-btn yt-lyric-btn-primary">Muat URL</button>
-  <div id="yt-lyrics-help">Lirik sinkron disediakan oleh <a href="https://lrclib.net/" target="_blank" rel="noreferrer">LRCLIB</a>. Untuk memuat track tertentu: buka halaman lirik LRCLIB, salin URL-nya, tempel di sini, lalu klik Muat URL.</div>
-`;
+const lyricsUrlInput = document.createElement('input');
+lyricsUrlInput.id = 'yt-lyrics-url';
+lyricsUrlInput.type = 'url';
+lyricsUrlInput.placeholder = 'https://lrclib.net/tracks/34709678';
+const lyricsUrlLoad = document.createElement('button');
+lyricsUrlLoad.id = 'yt-lyrics-url-load';
+lyricsUrlLoad.className = 'yt-lyric-btn yt-lyric-btn-primary';
+lyricsUrlLoad.textContent = 'Muat URL';
+const lyricsHelpEl = document.createElement('div');
+lyricsHelpEl.id = 'yt-lyrics-help';
+lyricsHelpEl.append('Lirik sinkron disediakan oleh ');
+const lyricsHelpLink = document.createElement('a');
+lyricsHelpLink.href = 'https://lrclib.net/';
+lyricsHelpLink.target = '_blank';
+lyricsHelpLink.rel = 'noreferrer';
+lyricsHelpLink.textContent = 'LRCLIB';
+lyricsHelpEl.append(lyricsHelpLink, '. Untuk memuat track tertentu: buka halaman lirik LRCLIB, salin URL-nya, tempel di sini, lalu klik Muat URL.');
+sourceEl.append(lyricsUrlInput, lyricsUrlLoad, lyricsHelpEl);
 document.getElementById('yt-lyrics-content').insertBefore(sourceEl, bodyEl);
-const lyricsUrlInput = document.getElementById('yt-lyrics-url');
-const lyricsUrlLoad = document.getElementById('yt-lyrics-url-load');
 const customThemeStyle = document.createElement('style');
 customThemeStyle.id = 'yt-lyrics-theme-style';
 (document.head || document.documentElement).appendChild(customThemeStyle);
@@ -161,8 +232,38 @@ function hexToRgba(hex, alphaPercent) {
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
 }
 
+// Cegah CSS injection lewat nilai config yang tidak tervalidasi.
+function safeCssColor(value, fallback) {
+  return typeof value === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim())
+    ? value.trim()
+    : fallback;
+}
+
+function safeCssNumber(value, fallback, min, max) {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.min(max, Math.max(min, num)) : fallback;
+}
+
 function applyUiTheme(config = {}) {
-  const theme = { ...DEFAULT_UI_CONFIG, ...config };
+  const theme = {
+    ...DEFAULT_UI_CONFIG,
+    ...config,
+    backgroundColor: safeCssColor(config.backgroundColor, DEFAULT_UI_CONFIG.backgroundColor),
+    activeColor: safeCssColor(config.activeColor, DEFAULT_UI_CONFIG.activeColor),
+    inactiveColor: safeCssColor(config.inactiveColor, DEFAULT_UI_CONFIG.inactiveColor),
+    romajiColor: safeCssColor(config.romajiColor, DEFAULT_UI_CONFIG.romajiColor),
+    translationColor: safeCssColor(config.translationColor, DEFAULT_UI_CONFIG.translationColor),
+    originalColor: safeCssColor(config.originalColor, DEFAULT_UI_CONFIG.originalColor),
+    activeFontSize: safeCssNumber(config.activeFontSize, DEFAULT_UI_CONFIG.activeFontSize, 8, 72),
+    inactiveFontSize: safeCssNumber(config.inactiveFontSize, DEFAULT_UI_CONFIG.inactiveFontSize, 8, 72),
+    originalFontSize: safeCssNumber(config.originalFontSize, DEFAULT_UI_CONFIG.originalFontSize, 8, 72),
+    romajiFontSize: safeCssNumber(config.romajiFontSize, DEFAULT_UI_CONFIG.romajiFontSize, 8, 72),
+    translationFontSize: safeCssNumber(config.translationFontSize, DEFAULT_UI_CONFIG.translationFontSize, 8, 72),
+    backgroundOpacity: safeCssNumber(config.backgroundOpacity, DEFAULT_UI_CONFIG.backgroundOpacity, 0, 100),
+    backdropBlur: safeCssNumber(config.backdropBlur, DEFAULT_UI_CONFIG.backdropBlur, 0, 20),
+    lyricFadePercent: safeCssNumber(config.lyricFadePercent, DEFAULT_UI_CONFIG.lyricFadePercent, 0, 30),
+    verseSpacing: safeCssNumber(config.verseSpacing, DEFAULT_UI_CONFIG.verseSpacing, 0, 48)
+  };
   const bgRgba = hexToRgba(theme.backgroundColor, theme.backgroundOpacity);
   const headerRgba = hexToRgba(theme.backgroundColor, Math.min(100, theme.backgroundOpacity + 5));
 
@@ -315,7 +416,7 @@ function roundOffset(value) {
 }
 
 function updateActionButtons() {
-  actionsEl.innerHTML = '';
+  actionsEl.replaceChildren();
   const primaryRow = document.createElement('div');
   primaryRow.className = 'yt-lyrics-action-row';
   const syncRow = document.createElement('div');
@@ -325,9 +426,9 @@ function updateActionButtons() {
     element.className = `yt-lyric-btn ${className}`;
     if (text === 'Refresh' || text === 'Hapus') {
       element.classList.add('yt-lyric-btn-icon');
-      element.innerHTML = text === 'Refresh'
-        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3"/></svg>'
-        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
+      element.appendChild(text === 'Refresh'
+        ? createSvgIcon(['M20 7v5h-5M4 17v-5h5', 'M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3'])
+        : createSvgIcon(['M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6']));
       element.setAttribute('aria-label', title);
     } else {
       element.textContent = text;
@@ -343,7 +444,12 @@ function updateActionButtons() {
     element.className = 'yt-lyric-btn yt-lyrics-toggle';
     element.setAttribute('aria-pressed', String(enabled));
     element.title = `${enabled ? 'Sembunyikan' : 'Tampilkan'} ${text.toLowerCase()}`;
-    element.innerHTML = `<span>${text}</span><span class="yt-lyrics-toggle-track" aria-hidden="true"></span>`;
+    const label = document.createElement('span');
+    label.textContent = text;
+    const track = document.createElement('span');
+    track.className = 'yt-lyrics-toggle-track';
+    track.setAttribute('aria-hidden', 'true');
+    element.append(label, track);
     element.onclick = () => toggleCurrentLyricVisibility(key);
     return element;
   };
@@ -352,7 +458,7 @@ function updateActionButtons() {
     ? button('Refresh', '', 'Ambil ulang lirik', () => {
       chrome.runtime.sendMessage({ action: 'getActiveVideoInfo' }, (activeInfo) => {
         if (chrome.runtime.lastError || !activeInfo?.songTitle) {
-          bodyEl.innerHTML = 'Tidak ada video YouTube aktif.';
+          bodyEl.textContent = 'Tidak ada video YouTube aktif.';
           return;
         }
         loadLyrics(activeInfo);
@@ -365,7 +471,7 @@ function updateActionButtons() {
       isStopped = true;
       currentLoadToken += 1;
       isLoading = false;
-      bodyEl.innerHTML = 'Proses dihentikan manual.';
+      bodyEl.textContent = 'Proses dihentikan manual.';
       updateActionButtons();
     }));
   }
@@ -583,7 +689,7 @@ function renderSyncedLyrics(lines) {
     ? parseLRC(currentLyricsPayload.originalData)
     : [];
   activeLyricIndex = -1;
-  bodyEl.innerHTML = '';
+  bodyEl.replaceChildren();
   const isRomajiVisible = currentLyricsPayload?.showRomaji !== false;
   bodyEl.classList.toggle('hide-romaji', !isRomajiVisible);
   parsedLyrics.forEach((line, index) => {
@@ -655,7 +761,16 @@ function displayLyrics(payload, fromCache) {
   }
   parsedLyrics = [];
   activeLyricIndex = -1;
-  bodyEl.innerHTML = payload.data || 'Lirik tidak ditemukan.';
+  bodyEl.replaceChildren();
+  const plainContent = payload.data || 'Lirik tidak ditemukan.';
+  if (/<[a-z][\s\S]*>/i.test(plainContent)) {
+    bodyEl.appendChild(sanitizeLyricsHTML(plainContent));
+  } else {
+    const plainEl = document.createElement('div');
+    plainEl.style.whiteSpace = 'pre-wrap';
+    plainEl.textContent = plainContent;
+    bodyEl.appendChild(plainEl);
+  }
 }
 
 function loadLyrics(info, forceFetch = false) {
@@ -679,13 +794,13 @@ function loadLyrics(info, forceFetch = false) {
 
     const fetchLyrics = () => {
       if (!isCurrentLoad()) return;
-        bodyEl.innerHTML = '<div class="loading">Mencari lirik sinkron di LRCLIB...</div>';
+        showLoadingMessage('Mencari lirik sinkron di LRCLIB...');
         chrome.runtime.sendMessage({ action: 'fetchSyncedLyrics', info }, (response) => {
         if (!isCurrentLoad()) return;
             if (chrome.runtime.lastError) {
               isLoading = false;
               updateActionButtons();
-              bodyEl.innerHTML = 'Gagal menghubungi layanan lirik.';
+              showPlainMessage('Gagal menghubungi layanan lirik.');
                 return;
             }
             if (response?.success && response.lyrics && parseLRC(response.lyrics).length) {
@@ -713,13 +828,13 @@ function loadLyrics(info, forceFetch = false) {
             }
 
               if (!isCurrentLoad()) return;
-            bodyEl.innerHTML = '<div class="loading">Lirik sinkron tidak ada. Mencari teks biasa...</div>';
+            showLoadingMessage('Lirik sinkron tidak ada. Mencari teks biasa...');
             chrome.runtime.sendMessage({ action: 'fetchLyrics', info }, (plainResponse) => {
                 if (!isCurrentLoad()) return;
                 if (chrome.runtime.lastError) {
                   isLoading = false;
                   updateActionButtons();
-                    bodyEl.innerHTML = 'Gagal menghubungi layanan lirik.';
+                    showPlainMessage('Gagal menghubungi layanan lirik.');
                     return;
                 }
                 displayLyrics({ type: 'plain', data: plainResponse || 'Lirik tidak ditemukan.' }, false);
@@ -765,12 +880,12 @@ function loadLyricsByUrl(url) {
   isStopped = false;
   isLoading = true;
   updateActionButtons();
-  bodyEl.innerHTML = '<div class="loading">Memuat lirik dari URL LRCLIB...</div>';
+  showLoadingMessage('Memuat lirik dari URL LRCLIB...');
   chrome.runtime.sendMessage({ action: 'fetchLyricsByLrclibUrl', url, info: currentSongInfo }, (response) => {
     if (!isCurrentLoad()) return;
     isLoading = false;
     if (chrome.runtime.lastError || !response?.success || !response.lyrics) {
-      bodyEl.innerHTML = response?.error || 'Gagal memuat URL LRCLIB.';
+      showPlainMessage(response?.error || 'Gagal memuat URL LRCLIB.');
       updateActionButtons();
       return;
     }
@@ -963,7 +1078,7 @@ function getYouTubeInfo() {
           currentLyricsPayload = null;
           updateActionButtons();
           titleEl.textContent = "Error";
-          bodyEl.innerHTML = "Tidak ada video YouTube yang sedang diputar.";
+          bodyEl.textContent = "Tidak ada video YouTube yang sedang diputar.";
           return;
         }
         if (isYTPage) {
